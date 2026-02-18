@@ -353,9 +353,9 @@
       });
 
       try {
-        // Create timeout promise (60 seconds for Claude API calls)
+        // Create timeout promise (3 minutes for large templates)
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('Request timed out after 60 seconds')), 60000);
+          setTimeout(() => reject(new Error('Request timed out after 3 minutes')), 180000);
         });
 
         // Race between fetch and timeout
