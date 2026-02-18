@@ -142,6 +142,59 @@ function regenerateUUIDs(obj) {
   return newObj;
 }
 
+// Validate template structure follows ISA-88 hierarchy
+function validateTemplateStructure(template) {
+  const errors = [];
+
+  // Root level checks
+  if (!template.level || template.level !== 'PROCEDURE') {
+    errors.push('Root must be level PROCEDURE');
+  }
+  if (!template.masterTemplateDetails) {
+    errors.push('Missing masterTemplateDetails');
+  }
+  if (!Array.isArray(template.children)) {
+    errors.push('Root must have children array');
+  }
+
+  // Recursive validation
+  function validateNode(node, expectedLevel, parentId) {
+    if (!node.globalSerialId) {
+      errors.push(`Node "${node.title}" missing globalSerialId`);
+    }
+    if (!node.localReferenceId) {
+      errors.push(`Node "${node.title}" missing localReferenceId`);
+    }
+    if (node.level !== expectedLevel) {
+      errors.push(`Node "${node.title}" has wrong level: ${node.level}, expected ${expectedLevel}`);
+    }
+
+    // Validate children
+    if (Array.isArray(node.children)) {
+      const childLevels = {
+        'PROCEDURE': 'UNIT_PROCEDURE',
+        'UNIT_PROCEDURE': 'OPERATION',
+        'OPERATION': 'PHASE',
+        'PHASE': 'PHASE_STEP'
+      };
+      const expectedChildLevel = childLevels[expectedLevel];
+
+      node.children.forEach(child => {
+        if (expectedChildLevel) {
+          validateNode(child, expectedChildLevel, node.id);
+        }
+      });
+    }
+  }
+
+  validateNode(template, 'PROCEDURE', null);
+
+  return {
+    valid: errors.length === 0,
+    errors: errors
+  };
+}
+
 // POST /api/generate - Generate modified template with unique IDs
 app.post('/api/generate', async (req, res) => {
   try {
@@ -169,7 +222,7 @@ app.post('/api/generate', async (req, res) => {
       try {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
-          model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 16000,
           timeout: 180000, // 3 minutes for large templates
           system: SYSTEM_PROMPT,
@@ -185,20 +238,30 @@ app.post('/api/generate', async (req, res) => {
         let responseText = message.content[0].text;
         console.log('Received response from Claude API');
 
-        // Strip markdown code blocks if present
-        responseText = responseText.trim();
-        if (responseText.startsWith('```')) {
-          // Remove opening ```json or ``` and closing ```
-          responseText = responseText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        // Try to extract JSON if Claude wrapped it in markdown
+        let jsonText = responseText.trim();
+        const jsonMatch = responseText.match(/```json?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[1];
         }
 
         // Parse Claude's response as JSON
-        templateData = JSON.parse(responseText);
+        const modifiedTemplate = JSON.parse(jsonText);
+
+        // Validate structure
+        const validation = validateTemplateStructure(modifiedTemplate);
+        if (!validation.valid) {
+          console.error('Validation errors:', validation.errors);
+          throw new Error('Invalid template structure: ' + validation.errors.join(', '));
+        }
+
+        // If validation passed, use the modified template
+        templateData = modifiedTemplate;
         modifiedByAI = true;
       } catch (error) {
-        console.error('Claude API error:', error);
+        console.error('AI modification failed:', error.message);
         aiError = error.message;
-        // Fall back to just UUID regeneration if Claude fails
+        // Fall back to original template - UUID regeneration happens below
       }
     }
 
