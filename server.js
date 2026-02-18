@@ -47,10 +47,20 @@ KEY RULES:
 8. Preserve all required fields: repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, type, simplifiedNavigationRoleIds, structureRoles, instructionParts, receivedDataProjections, projectedDataProjections, apiColumns, logbookTemplateIds, tags, productStructures, templateTableEntities, subTemplate, temporaryChangeStructure, optionStructure, configurationGroupPlaceholder, simplifiedNavigationRoles, isSubTemplate
 
 COMMON MODIFICATIONS:
-- "Add a phase for X" - Create new PHASE node with title "X" as child of appropriate OPERATION
-- "Add a step for Y" - Create new PHASE_STEP with title "Y" as child of appropriate PHASE
+- "Add a phase for X" - Create new PHASE node (level: "PHASE") with title "X" as child of an OPERATION node
+  - PHASE must have: type="PARENT", phaseId (unique number), phaseOrderNumber (increment from last phase)
+  - PHASE must contain at least one PHASE_STEP child with ITERATION_REVIEW type and proper dataCaptureSteps
+  - Copy the structure from existing PHASEs in the template, including all required fields
+- "Add a step for Y" - Create new PHASE_STEP node (level: "PHASE_STEP") with title "Y" as child of a PHASE
+  - PHASE_STEP must have: phaseStepId, phaseStepOrderNumber (increment by 1000), type (usually GENERAL_TEXT)
+  - PHASE_STEP should have empty arrays but must include: dataCaptureSteps (can be empty for non-ITERATION_REVIEW types)
 - "Rename X to Y" - Find node with title containing X, change title to Y
-- "Add an operation for Z" - Create new OPERATION as child of UNIT_PROCEDURE
+- "Add an operation for Z" - Create new OPERATION (level: "OPERATION") as child of UNIT_PROCEDURE
+
+CRITICAL: When adding a PHASE, look at existing PHASEs in the template and copy their structure exactly, including:
+- All required fields (repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, etc.)
+- At least one ITERATION_REVIEW PHASE_STEP child with proper dataCaptureSteps array
+- All empty arrays (simplifiedNavigationRoleIds, structureRoles, etc.)
 
 Return ONLY valid JSON - no explanation, no markdown code blocks, just the modified template JSON.`;
 
