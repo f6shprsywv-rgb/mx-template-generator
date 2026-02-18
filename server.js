@@ -7,7 +7,11 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk').default;
-const anthropic = new Anthropic(); // Uses ANTHROPIC_API_KEY env var automatically
+// Initialize Anthropic client for LiteLLM proxy
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  baseURL: process.env.ANTHROPIC_BASE_URL
+});
 
 // Create Express app
 const app = express();
