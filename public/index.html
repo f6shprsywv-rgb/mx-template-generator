@@ -225,12 +225,12 @@
 
     <div class="loading-state" id="loading-state">
       <span class="spinner"></span>
-      <span>Generating your template...</span>
+      <span>AI is modifying your template...</span>
     </div>
 
     <div class="result-area">
       <div class="success-message" id="success-message">
-        <strong>Success!</strong> Your template has been generated.
+        <strong>Success!</strong> Your template has been modified based on your request.
         <br><br>
         <a href="#" class="download-link" id="download-link">Download template</a>
       </div>
@@ -353,7 +353,13 @@
       });
 
       try {
-        const response = await fetch('/api/generate', {
+        // Create timeout promise (60 seconds for Claude API calls)
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timed out after 60 seconds')), 60000);
+        });
+
+        // Race between fetch and timeout
+        const fetchPromise = fetch('/api/generate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -363,6 +369,8 @@
             request: request
           })
         });
+
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
 
         if (!response.ok) {
           const errorData = await response.json();
@@ -374,15 +382,40 @@
         if (result.success) {
           generatedTemplate = result;
           loadingState.classList.remove('show');
+
+          // Update success message based on whether AI modified it
+          if (result.modifiedByAI) {
+            successMessage.innerHTML = '<strong>Success!</strong> Your template has been modified based on your request.<br><br><a href="#" class="download-link" id="download-link">Download template</a>';
+          } else if (result.aiError) {
+            successMessage.innerHTML = '<strong>Partial Success:</strong> AI processing failed - downloaded template has new IDs but no modifications.<br><br>' +
+                                       '<em>Error: ' + result.aiError + '</em><br><br>' +
+                                       '<a href="#" class="download-link" id="download-link">Download template</a>';
+          } else {
+            successMessage.innerHTML = '<strong>Success!</strong> Your template has been generated with unique IDs.<br><br><a href="#" class="download-link" id="download-link">Download template</a>';
+          }
+
           successMessage.classList.add('show');
           errorMessage.classList.remove('show');
+
+          // Re-attach download link handler
+          document.getElementById('download-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            downloadTemplate();
+          });
         } else {
           throw new Error(result.error || 'Generation failed');
         }
       } catch (error) {
         console.error('Error generating template:', error);
         loadingState.classList.remove('show');
-        errorMessage.innerHTML = `Error: ${error.message}`;
+
+        // Provide helpful error messages
+        let errorMsg = `Error: ${error.message}`;
+        if (error.message.includes('timed out')) {
+          errorMsg += '<br><br>The AI took too long to respond. Please try again with a simpler request.';
+        }
+
+        errorMessage.innerHTML = errorMsg;
         errorMessage.classList.add('show');
         successMessage.classList.remove('show');
       } finally {
