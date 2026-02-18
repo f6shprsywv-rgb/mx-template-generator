@@ -16,6 +16,9 @@ const PORT = process.env.PORT || 3000;
 // This means when someone visits your site, they automatically get files from public/
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Body parsing middleware
+app.use(express.json());
+
 // API Routes
 // GET /api/templates - List all available templates
 app.get('/api/templates', (req, res) => {
@@ -68,6 +71,43 @@ app.get('/api/templates/:id', (req, res) => {
   } catch (error) {
     console.error('Error loading template:', error);
     res.status(500).json({ error: 'Failed to load template' });
+  }
+});
+
+// POST /api/generate - Generate modified template (stub - returns baseline for now)
+app.post('/api/generate', (req, res) => {
+  try {
+    const { templateId, request } = req.body;
+
+    // Validate inputs
+    if (!templateId) {
+      return res.status(400).json({ error: 'Template ID is required' });
+    }
+
+    // Load the baseline template
+    const filePath = path.join(__dirname, 'templates', `${templateId}.mt`);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    const templateData = JSON.parse(fileContent);
+
+    // TODO: Phase 3-4 will add NLP processing here
+    // For now, just return the baseline template unchanged
+
+    // Generate filename with template name and timestamp
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const filename = `${templateId}-${timestamp}.mt`;
+
+    res.json({
+      success: true,
+      filename: filename,
+      template: templateData
+    });
+  } catch (error) {
+    console.error('Error generating template:', error);
+    res.status(500).json({ error: 'Failed to generate template' });
   }
 });
 
