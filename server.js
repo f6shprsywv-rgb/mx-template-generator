@@ -4,6 +4,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 // Create Express app
@@ -74,7 +75,30 @@ app.get('/api/templates/:id', (req, res) => {
   }
 });
 
-// POST /api/generate - Generate modified template (stub - returns baseline for now)
+// Helper function: Recursively regenerate all UUIDs in template
+function regenerateUUIDs(obj) {
+  if (typeof obj !== 'object' || obj === null) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => regenerateUUIDs(item));
+  }
+
+  const newObj = {};
+  for (const key in obj) {
+    if (key === 'globalSerialId' || key === 'localReferenceId') {
+      // Generate new UUID for these fields
+      newObj[key] = uuidv4();
+    } else {
+      // Recursively process nested objects/arrays
+      newObj[key] = regenerateUUIDs(obj[key]);
+    }
+  }
+  return newObj;
+}
+
+// POST /api/generate - Generate modified template with unique IDs
 app.post('/api/generate', (req, res) => {
   try {
     const { templateId, request } = req.body;
@@ -91,10 +115,25 @@ app.post('/api/generate', (req, res) => {
     }
 
     const fileContent = fs.readFileSync(filePath, 'utf8');
-    const templateData = JSON.parse(fileContent);
+    let templateData = JSON.parse(fileContent);
 
-    // TODO: Phase 3-4 will add NLP processing here
-    // For now, just return the baseline template unchanged
+    // CRITICAL FIX: Regenerate all UUIDs to avoid duplicate ID errors in MasterControl
+    templateData = regenerateUUIDs(templateData);
+
+    // Update title to indicate it's a generated copy
+    if (templateData.title) {
+      const timestamp = new Date().toISOString().split('T')[0];
+      templateData.title = `${templateData.title} (Generated ${timestamp})`;
+    }
+
+    // Update productId to make it unique
+    if (templateData.productId) {
+      const timestamp = new Date().toISOString().split('T')[0];
+      templateData.productId = `${templateData.productId}-GEN-${timestamp}`;
+    }
+
+    // TODO: Phase 3-4 will add NLP processing here to actually modify the template
+    // For now, just return with regenerated UUIDs so it can import successfully
 
     // Generate filename with template name and timestamp
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
