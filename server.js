@@ -224,7 +224,6 @@ app.post('/api/generate', async (req, res) => {
         const message = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
           max_tokens: 16000,
-          timeout: 180000, // 3 minutes for large templates
           system: SYSTEM_PROMPT,
           messages: [
             {
@@ -232,6 +231,8 @@ app.post('/api/generate', async (req, res) => {
               content: `Baseline template:\n${JSON.stringify(templateData, null, 2)}\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
             }
           ]
+        }, {
+          timeout: 180000 // 3 minutes for large templates
         });
 
         // Extract text content from response
