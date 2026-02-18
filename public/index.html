@@ -4,9 +4,72 @@
   <title>Mx Template Generator</title>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    select {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
   <h1>Mx Template Generator</h1>
-  <p>Foundation infrastructure operational.</p>
+  <p>Select a baseline template to get started.</p>
+
+  <div class="form-group">
+    <label for="template-select">Baseline Template:</label>
+    <select id="template-select">
+      <option value="">Loading templates...</option>
+    </select>
+  </div>
+
+  <script>
+    // Load templates from API when page loads
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const response = await fetch('/api/templates');
+        const templates = await response.json();
+
+        const select = document.getElementById('template-select');
+
+        // Clear loading message
+        select.innerHTML = '';
+
+        // Add placeholder option
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '-- Select a template --';
+        select.appendChild(placeholder);
+
+        // Add template options
+        templates.forEach(template => {
+          const option = document.createElement('option');
+          option.value = template.id;
+          option.textContent = template.name;
+          select.appendChild(option);
+        });
+      } catch (error) {
+        console.error('Error loading templates:', error);
+        const select = document.getElementById('template-select');
+        select.innerHTML = '<option value="">Error loading templates</option>';
+      }
+    });
+  </script>
 </body>
 </html>
