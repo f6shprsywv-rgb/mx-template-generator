@@ -6,6 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
+const Anthropic = require('@anthropic-ai/sdk').default;
+const anthropic = new Anthropic(); // Uses ANTHROPIC_API_KEY env var automatically
 
 // Create Express app
 const app = express();
@@ -19,6 +21,34 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Body parsing middleware
 app.use(express.json());
+
+// System prompt for Claude API - explains Mx template structure
+const SYSTEM_PROMPT = `You are a MasterControl Mx template modifier. You receive a baseline template JSON and a user request, and you return the modified template JSON.
+
+STRUCTURE (ISA-88 hierarchy):
+- PROCEDURE (level: "PROCEDURE") - The root/master template
+  - UNIT_PROCEDURE (level: "UNIT_PROCEDURE") - Major sections
+    - OPERATION (level: "OPERATION") - Groups of phases
+      - PHASE (level: "PHASE") - Individual process phases
+        - PHASE_STEP (level: "PHASE_STEP") - Steps within phases
+
+KEY RULES:
+1. Always preserve the hierarchy - children must have correct parentId pointing to parent's id
+2. Each node needs: id (number), globalSerialId (UUID), localReferenceId (UUID), title, type, level, children array
+3. Order numbers: unitProcedureOrderNumber, operationOrderNumber, phaseOrderNumber, phaseStepOrderNumber (1-based, *1000 for steps)
+4. Keep masterTemplateId consistent (points to root PROCEDURE id)
+5. Preserve dataCaptureSteps arrays - these define data capture behavior
+6. When adding new nodes, generate placeholder IDs (any number) - they'll be regenerated
+7. When adding new nodes, ensure they have the same structure as existing nodes of the same level
+8. Preserve all required fields: repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, type, simplifiedNavigationRoleIds, structureRoles, instructionParts, receivedDataProjections, projectedDataProjections, apiColumns, logbookTemplateIds, tags, productStructures, templateTableEntities, subTemplate, temporaryChangeStructure, optionStructure, configurationGroupPlaceholder, simplifiedNavigationRoles, isSubTemplate
+
+COMMON MODIFICATIONS:
+- "Add a phase for X" - Create new PHASE node with title "X" as child of appropriate OPERATION
+- "Add a step for Y" - Create new PHASE_STEP with title "Y" as child of appropriate PHASE
+- "Rename X to Y" - Find node with title containing X, change title to Y
+- "Add an operation for Z" - Create new OPERATION as child of UNIT_PROCEDURE
+
+Return ONLY valid JSON - no explanation, no markdown code blocks, just the modified template JSON.`;
 
 // API Routes
 // GET /api/templates - List all available templates
@@ -99,7 +129,7 @@ function regenerateUUIDs(obj) {
 }
 
 // POST /api/generate - Generate modified template with unique IDs
-app.post('/api/generate', (req, res) => {
+app.post('/api/generate', async (req, res) => {
   try {
     const { templateId, request } = req.body;
 
@@ -117,7 +147,47 @@ app.post('/api/generate', (req, res) => {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     let templateData = JSON.parse(fileContent);
 
-    // CRITICAL FIX: Regenerate all UUIDs to avoid duplicate ID errors in MasterControl
+    // If user provided a modification request, use Claude API to modify the template
+    let modifiedByAI = false;
+    let aiError = null;
+
+    if (request && request.trim()) {
+      try {
+        console.log('Sending request to Claude API...');
+        const message = await anthropic.messages.create({
+          model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          max_tokens: 16000,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: `Baseline template:\n${JSON.stringify(templateData, null, 2)}\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
+            }
+          ]
+        });
+
+        // Extract text content from response
+        let responseText = message.content[0].text;
+        console.log('Received response from Claude API');
+
+        // Strip markdown code blocks if present
+        responseText = responseText.trim();
+        if (responseText.startsWith('```')) {
+          // Remove opening ```json or ``` and closing ```
+          responseText = responseText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+        }
+
+        // Parse Claude's response as JSON
+        templateData = JSON.parse(responseText);
+        modifiedByAI = true;
+      } catch (error) {
+        console.error('Claude API error:', error);
+        aiError = error.message;
+        // Fall back to just UUID regeneration if Claude fails
+      }
+    }
+
+    // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors in MasterControl
     templateData = regenerateUUIDs(templateData);
 
     // Update title to indicate it's a generated copy
@@ -127,13 +197,10 @@ app.post('/api/generate', (req, res) => {
     }
 
     // Update productId to make it unique
-    if (templateData.productId) {
+    if (templateData.masterTemplateDetails && templateData.masterTemplateDetails.productId) {
       const timestamp = new Date().toISOString().split('T')[0];
-      templateData.productId = `${templateData.productId}-GEN-${timestamp}`;
+      templateData.masterTemplateDetails.productId = `${templateData.masterTemplateDetails.productId}-GEN-${timestamp}`;
     }
-
-    // TODO: Phase 3-4 will add NLP processing here to actually modify the template
-    // For now, just return with regenerated UUIDs so it can import successfully
 
     // Generate filename with template name and timestamp
     const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -142,7 +209,9 @@ app.post('/api/generate', (req, res) => {
     res.json({
       success: true,
       filename: filename,
-      template: templateData
+      template: templateData,
+      modifiedByAI: modifiedByAI,
+      aiError: aiError
     });
   } catch (error) {
     console.error('Error generating template:', error);
