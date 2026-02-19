@@ -27,23 +27,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // System prompt for Claude API - explains Mx template structure
-const SYSTEM_PROMPT = `You modify MasterControl Mx template JSON. When user asks to add a phase/step, find an existing similar node in the template and copy its ENTIRE structure exactly, then update only the necessary IDs and values.
+const SYSTEM_PROMPT = `You modify MasterControl Mx template JSON by copying existing nodes.
 
-CRITICAL: Copy EVERY field from the existing node - all arrays, all booleans, all nested objects. Change only:
-- id, globalSerialId, localReferenceId (new values)
-- title (if specified)
-- Order numbers (phaseOrderNumber, phaseStepOrderNumber)
-- Parent references (parentId, phaseId, operationId)
+TASK: When user says "Add a phase called X":
+1. Find an existing PHASE node in the template (level: "PHASE")
+2. Copy it ENTIRELY with ALL children and nested structures
+3. Change ONLY these values:
+   - id: increment by 1000
+   - globalSerialId, localReferenceId: generate new UUIDs
+   - title: "X" (the requested name)
+   - phaseId: same as new id
+   - phaseOrderNumber: increment by 1 from last phase
+   - Update parentId references in all children to point to new phase id
+4. Add the new PHASE to the OPERATION's children array
 
-ISA-88 Hierarchy: PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
+CRITICAL: Preserve EVERYTHING else exactly - all dataCaptureSteps, all empty arrays, all boolean flags, all nested children (PHASE_STEPs, SUB_PHASE_STEPs), all field names and values.
 
-Key requirements:
-- PHASE nodes must have ITERATION_REVIEW child at phaseStepOrderNumber: 1000
-- DATA_ENTRY PHASE_STEPs must have: structureDisplay field + CORRECTION SUB_PHASE_STEP child
-- Preserve all dataCaptureSteps exactly as they appear in the source node
-- Keep all empty arrays and boolean flags
-
-Return ONLY the modified JSON, no explanations.`;
+Return ONLY the complete modified JSON template.`;
 
 // API Routes
 // GET /api/templates - List all available templates
