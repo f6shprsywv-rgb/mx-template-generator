@@ -7,10 +7,12 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk').default;
-// Initialize Anthropic client for LiteLLM proxy
+// Initialize Anthropic client
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
-  baseURL: process.env.ANTHROPIC_BASE_URL
+  baseURL: process.env.ANTHROPIC_BASE_URL,
+  timeout: 300000, // 5 minutes
+  maxRetries: 2
 });
 
 // Create Express app
@@ -204,7 +206,7 @@ app.post('/api/generate', async (req, res) => {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 32000,
+          max_tokens: 24000,
           system: SYSTEM_PROMPT,
           messages: [
             {
@@ -212,8 +214,6 @@ app.post('/api/generate', async (req, res) => {
               content: `Baseline template:\n${JSON.stringify(templateData, null, 2)}\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
             }
           ]
-        }, {
-          timeout: 180000 // 3 minutes for large templates
         });
 
         // Extract text content from response
