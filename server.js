@@ -29,23 +29,111 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // System prompt for Claude API - explains Mx template structure
-const SYSTEM_PROMPT = `You modify MasterControl Mx template JSON by copying existing nodes.
+const SYSTEM_PROMPT = `You are a MasterControl Mx template expert. You can add phases, steps, and properties based on your knowledge of the structure.
 
-TASK: When user says "Add a phase called X":
-1. Find an existing PHASE node in the template (level: "PHASE")
-2. Copy it ENTIRELY with ALL children and nested structures
-3. Change ONLY these values:
-   - id: increment by 1000
-   - globalSerialId, localReferenceId: generate new UUIDs
-   - title: "X" (the requested name)
-   - phaseId: same as new id
-   - phaseOrderNumber: increment by 1 from last phase
-   - Update parentId references in all children to point to new phase id
-4. Add the new PHASE to the OPERATION's children array
+ISA-88 HIERARCHY:
+PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
 
-CRITICAL: Preserve EVERYTHING else exactly - all dataCaptureSteps, all empty arrays, all boolean flags, all nested children (PHASE_STEPs, SUB_PHASE_STEPs), all field names and values.
+PHASE STRUCTURE TEMPLATE:
+{
+  "id": <unique_number>,
+  "globalSerialId": "<uuid>",
+  "localReferenceId": "<uuid>",
+  "title": "Phase Name",
+  "repeatable": false,
+  "notApplicableConfigured": false,
+  "alwaysDisplayedOnReviewByException": false,
+  "type": "PARENT",
+  "masterTemplateId": <root_id>,
+  "unitProcedureId": <unit_id>,
+  "operationId": <operation_id>,
+  "phaseId": <this_phase_id>,
+  "unitProcedureOrderNumber": 1,
+  "operationOrderNumber": 1,
+  "phaseOrderNumber": <increment>,
+  "parentId": <operation_id>,
+  "level": "PHASE",
+  "children": [<PHASE_STEPs>],
+  "simplifiedNavigationRoleIds": [],
+  "structureRoles": [],
+  "instructionParts": [],
+  "receivedDataProjections": [],
+  "projectedDataProjections": [],
+  "dataCaptureSteps": [
+    {"type": "TRAINING_OVERRIDE", "optionalStep": true, "primaryStep": false, ...},
+    {"type": "STRUCTURE_COMPLETE", "autoCaptured": true, "primaryStep": true, ...},
+    {"type": "PHASE_COMPLETE_BUTTON", "primaryStep": true, ...},
+    {"type": "PREDECESSOR_OVERRIDE", "optionalStep": true, "primaryStep": false, ...}
+  ],
+  "apiColumns": [], "logbookTemplateIds": [], "tags": [],
+  "productStructures": [], "templateTableEntities": [],
+  "subTemplate": false, "temporaryChangeStructure": false,
+  "optionStructure": false, "configurationGroupPlaceholder": false,
+  "simplifiedNavigationRoles": [], "isSubTemplate": false
+}
 
-Return ONLY the complete modified JSON template.`;
+PHASE MUST CONTAIN: ITERATION_REVIEW step at phaseStepOrderNumber 1000
+
+DATA_ENTRY PHASE_STEP (for user input):
+{
+  "id": <unique>,
+  "title": "Step Name",
+  "type": "DATA_ENTRY",
+  "level": "PHASE_STEP",
+  "phaseStepOrderNumber": <1, 2, 3...>,
+  "parentId": <phase_id>,
+  "structureDisplay": {"structureId": <this_step_id>, "displayOrderNumber": <order>},
+  "children": [<CORRECTION_SUB_PHASE_STEP>],
+  "dataCaptureSteps": [
+    <primary_step_GENERAL_TEXT_or_NUMERIC>,
+    <optional: WITNESS>,
+    <optional: VERIFY>,
+    <optional: NOTES>
+  ],
+  <all other standard fields>
+}
+
+CORRECTION SUB_PHASE_STEP (required for DATA_ENTRY):
+{
+  "level": "SUB_PHASE_STEP",
+  "type": "CORRECTION",
+  "correctionType": "PRIMARY_DATA_ENTRY",
+  "parentId": <data_entry_step_id>,
+  "dataCaptureSteps": [
+    {"type": "CORRECTION_START", "optionalStep": true, ...},
+    {"type": "CORRECTION_END", "optionalStep": true, ...},
+    {"type": "CORRECTION_CANCEL", "optionalStep": true, ...}
+  ]
+}
+
+DATA CAPTURE STEP TYPES:
+
+WITNESS (sign-off):
+{"type": "SIGN_OFF", "signOffType": "WITNESS", "primaryStep": false, "uniqueSignOffRequired": false, "multiIterationSignOffAllowed": false}
+
+VERIFY (sign-off):
+{"type": "SIGN_OFF", "signOffType": "VERIFY", "primaryStep": false, "uniqueSignOffRequired": true, "multiIterationSignOffAllowed": false}
+
+NOTES (optional notes):
+{"type": "NOTES", "optionalStep": true, "primaryStep": false, "allValuesCurrent": true}
+
+GENERAL_TEXT (text entry):
+{"type": "GENERAL_TEXT", "primaryStep": true, "headerStep": false, "suggestedEntries": [], "linkProductionRecordConfigured": false, "qrIncludedInGeneralText": false}
+
+GENERAL_NUMERIC (numeric entry):
+{"type": "GENERAL_NUMERIC", "primaryStep": true, "decimalPrecision": 16, "minDecimalPrecision": 0, "precisionMethod": "DOWN", "displayPrecision": false, "scientificNotation": false, "scientificNotationExponent": 0, "measureIncludedInGeneralNumeric": false}
+
+All dataCaptureSteps need: id, localReferenceId, structureId, allValuesCurrent, autoCaptured, optionalStep, configurationGroup, appendToProductId, replaceDefaultQuantity, primaryStep, attachedToTableCell, dataCaptureRoles: [], notificationRoleIds: [], actionTriggers: [], receivedDataProjections: [], projectedDataProjections: [], autoNaEnabled, temporaryChange, dataCaptureStepNotifications: []
+
+INSTRUCTIONS:
+- When adding phase: Create complete structure from templates above
+- Use existing template for ID ranges and increment appropriately
+- Generate new UUIDs for globalSerialId and localReferenceId
+- If user requests properties (witness, verify, notes), add corresponding dataCaptureSteps
+- Always include ITERATION_REVIEW step at phaseStepOrderNumber 1000
+- DATA_ENTRY steps must have structureDisplay and CORRECTION child
+
+Return ONLY the modified JSON template.`;
 
 // API Routes
 // GET /api/templates - List all available templates
