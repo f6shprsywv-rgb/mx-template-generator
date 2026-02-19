@@ -287,7 +287,7 @@ app.post('/api/generate', async (req, res) => {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 16000,
+          max_tokens: 32000,
           system: SYSTEM_PROMPT,
           messages: [
             {
