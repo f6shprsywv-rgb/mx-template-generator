@@ -35,32 +35,96 @@ STRUCTURE (ISA-88 hierarchy):
     - OPERATION (level: "OPERATION") - Groups of phases
       - PHASE (level: "PHASE") - Individual process phases
         - PHASE_STEP (level: "PHASE_STEP") - Steps within phases
+          - SUB_PHASE_STEP (level: "SUB_PHASE_STEP") - Corrections for DATA_ENTRY steps
 
-KEY RULES:
-1. Always preserve the hierarchy - children must have correct parentId pointing to parent's id
-2. Each node needs: id (number), globalSerialId (UUID), localReferenceId (UUID), title, type, level, children array
-3. Order numbers: unitProcedureOrderNumber, operationOrderNumber, phaseOrderNumber, phaseStepOrderNumber (1-based, *1000 for steps)
-4. Keep masterTemplateId consistent (points to root PROCEDURE id)
-5. Preserve dataCaptureSteps arrays - these define data capture behavior
-6. When adding new nodes, generate placeholder IDs (any number) - they'll be regenerated
-7. When adding new nodes, ensure they have the same structure as existing nodes of the same level
-8. Preserve all required fields: repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, type, simplifiedNavigationRoleIds, structureRoles, instructionParts, receivedDataProjections, projectedDataProjections, apiColumns, logbookTemplateIds, tags, productStructures, templateTableEntities, subTemplate, temporaryChangeStructure, optionStructure, configurationGroupPlaceholder, simplifiedNavigationRoles, isSubTemplate
+CRITICAL REQUIREMENTS WHEN ADDING NODES:
 
-COMMON MODIFICATIONS:
-- "Add a phase for X" - Create new PHASE node (level: "PHASE") with title "X" as child of an OPERATION node
-  - PHASE must have: type="PARENT", phaseId (unique number), phaseOrderNumber (increment from last phase)
-  - PHASE must contain at least one PHASE_STEP child with ITERATION_REVIEW type and proper dataCaptureSteps
-  - Copy the structure from existing PHASEs in the template, including all required fields
-- "Add a step for Y" - Create new PHASE_STEP node (level: "PHASE_STEP") with title "Y" as child of a PHASE
-  - PHASE_STEP must have: phaseStepId, phaseStepOrderNumber (increment by 1000), type (usually GENERAL_TEXT)
-  - PHASE_STEP should have empty arrays but must include: dataCaptureSteps (can be empty for non-ITERATION_REVIEW types)
-- "Rename X to Y" - Find node with title containing X, change title to Y
-- "Add an operation for Z" - Create new OPERATION (level: "OPERATION") as child of UNIT_PROCEDURE
+When copying from existing nodes, you MUST preserve EVERY field exactly as it appears, including:
+- All empty arrays (simplifiedNavigationRoleIds, structureRoles, instructionParts, receivedDataProjections, projectedDataProjections, apiColumns, logbookTemplateIds, tags, productStructures, templateTableEntities)
+- All boolean flags (repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, subTemplate, temporaryChangeStructure, optionStructure, configurationGroupPlaceholder, isSubTemplate, allValuesCurrent, autoCaptured, optionalStep, configurationGroup, appendToProductId, replaceDefaultQuantity, primaryStep, attachedToTableCell, autoNaEnabled, temporaryChange)
+- All required fields even if empty
+- Exact dataCaptureSteps structure and order
 
-CRITICAL: When adding a PHASE, look at existing PHASEs in the template and copy their structure exactly, including:
-- All required fields (repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, etc.)
-- At least one ITERATION_REVIEW PHASE_STEP child with proper dataCaptureSteps array
-- All empty arrays (simplifiedNavigationRoleIds, structureRoles, etc.)
+PHASE_STEP TYPES AND REQUIREMENTS:
+
+1. DATA_ENTRY steps (for user input) MUST have:
+   - type: "DATA_ENTRY"
+   - structureDisplay: {"structureId": <phaseStepId>, "displayOrderNumber": <order>}
+   - children: [<CORRECTION SUB_PHASE_STEP>]  // REQUIRED!
+   - dataCaptureSteps: array with primary data capture step (GENERAL_TEXT, GENERAL_NUMERIC, etc.)
+
+2. ITERATION_REVIEW steps (for phase completion) MUST have:
+   - type: "ITERATION_REVIEW"
+   - phaseStepOrderNumber: 1000 (always)
+   - NO structureDisplay field
+   - NO children array (empty)
+   - dataCaptureSteps: [ITERATION_READY_FOR_REVIEW, ITERATION_COMPLETE]
+
+3. CORRECTION SUB_PHASE_STEP (required child of DATA_ENTRY):
+   - level: "SUB_PHASE_STEP"
+   - type: "CORRECTION"
+   - correctionType: "PRIMARY_DATA_ENTRY"
+   - Must have same ID fields as parent (phaseStepId, phaseOrderNumber, etc.)
+   - dataCaptureSteps: [
+       {"type": "CORRECTION_START", "optionalStep": true, "primaryStep": false},
+       {"type": "CORRECTION_END", "optionalStep": true, "primaryStep": false},
+       {"type": "CORRECTION_CANCEL", "optionalStep": true, "primaryStep": false}
+     ]
+
+DATA CAPTURE STEP TYPES:
+
+When copying dataCaptureSteps, preserve the exact type and all its fields:
+
+- GENERAL_TEXT: Text entry
+  Required fields: headerStep, suggestedEntries, linkProductionRecordConfigured, qrIncludedInGeneralText
+
+- GENERAL_NUMERIC: Numeric entry
+  Required fields: decimalPrecision, minDecimalPrecision, precisionMethod, displayPrecision, scientificNotation, scientificNotationExponent, measureIncludedInGeneralNumeric
+
+- NOTES: Optional notes
+  Required fields: allValuesCurrent: true, optionalStep: true, primaryStep: false
+
+- SIGN_OFF: Witness/Verify signatures
+  Required fields: signOffType ("WITNESS", "VERIFY", or "RELEASE"), uniqueSignOffRequired, multiIterationSignOffAllowed
+
+- ITERATION_READY_FOR_REVIEW, ITERATION_COMPLETE: Phase iteration steps
+- STRUCTURE_COMPLETE: Auto-captured completion step
+- PHASE_COMPLETE_BUTTON: Phase completion button
+- TRAINING_OVERRIDE, PREDECESSOR_OVERRIDE: Optional override steps
+- CORRECTION_START, CORRECTION_END, CORRECTION_CANCEL: Correction workflow steps
+
+MODIFICATION PATTERNS:
+
+1. Adding a PHASE:
+   - Find existing PHASE in template
+   - Copy entire PHASE structure including ALL fields
+   - Update: id, globalSerialId, localReferenceId (new UUIDs), title, phaseId, phaseOrderNumber
+   - Update all child PHASE_STEPs with new parent references
+   - Ensure ITERATION_REVIEW step has phaseStepOrderNumber: 1000
+   - Preserve exact dataCaptureSteps order from baseline
+
+2. Adding a DATA_ENTRY PHASE_STEP:
+   - Find existing DATA_ENTRY step in template
+   - Copy entire structure including:
+     * structureDisplay field
+     * CORRECTION SUB_PHASE_STEP child with 3 dataCaptureSteps
+     * All dataCaptureSteps with exact field structure
+   - Update IDs and references
+   - Increment phaseStepOrderNumber by 1
+
+3. Adding an OPERATION:
+   - Find existing OPERATION in template
+   - Copy entire structure including all nested PHASE nodes
+   - Update IDs and references
+
+VALIDATION CHECKLIST:
+- [ ] All PHASE nodes have ITERATION_REVIEW child at phaseStepOrderNumber 1000
+- [ ] All DATA_ENTRY steps have structureDisplay field
+- [ ] All DATA_ENTRY steps have CORRECTION SUB_PHASE_STEP child
+- [ ] All dataCaptureSteps have required type-specific fields
+- [ ] All empty arrays preserved from baseline
+- [ ] All boolean flags preserved from baseline
+- [ ] parentId references updated correctly
 
 Return ONLY valid JSON - no explanation, no markdown code blocks, just the modified template JSON.`;
 
