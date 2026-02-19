@@ -27,106 +27,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // System prompt for Claude API - explains Mx template structure
-const SYSTEM_PROMPT = `You are a MasterControl Mx template modifier. You receive a baseline template JSON and a user request, and you return the modified template JSON.
+const SYSTEM_PROMPT = `You modify MasterControl Mx template JSON. When user asks to add a phase/step, find an existing similar node in the template and copy its ENTIRE structure exactly, then update only the necessary IDs and values.
 
-STRUCTURE (ISA-88 hierarchy):
-- PROCEDURE (level: "PROCEDURE") - The root/master template
-  - UNIT_PROCEDURE (level: "UNIT_PROCEDURE") - Major sections
-    - OPERATION (level: "OPERATION") - Groups of phases
-      - PHASE (level: "PHASE") - Individual process phases
-        - PHASE_STEP (level: "PHASE_STEP") - Steps within phases
-          - SUB_PHASE_STEP (level: "SUB_PHASE_STEP") - Corrections for DATA_ENTRY steps
+CRITICAL: Copy EVERY field from the existing node - all arrays, all booleans, all nested objects. Change only:
+- id, globalSerialId, localReferenceId (new values)
+- title (if specified)
+- Order numbers (phaseOrderNumber, phaseStepOrderNumber)
+- Parent references (parentId, phaseId, operationId)
 
-CRITICAL REQUIREMENTS WHEN ADDING NODES:
+ISA-88 Hierarchy: PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
 
-When copying from existing nodes, you MUST preserve EVERY field exactly as it appears, including:
-- All empty arrays (simplifiedNavigationRoleIds, structureRoles, instructionParts, receivedDataProjections, projectedDataProjections, apiColumns, logbookTemplateIds, tags, productStructures, templateTableEntities)
-- All boolean flags (repeatable, notApplicableConfigured, alwaysDisplayedOnReviewByException, subTemplate, temporaryChangeStructure, optionStructure, configurationGroupPlaceholder, isSubTemplate, allValuesCurrent, autoCaptured, optionalStep, configurationGroup, appendToProductId, replaceDefaultQuantity, primaryStep, attachedToTableCell, autoNaEnabled, temporaryChange)
-- All required fields even if empty
-- Exact dataCaptureSteps structure and order
+Key requirements:
+- PHASE nodes must have ITERATION_REVIEW child at phaseStepOrderNumber: 1000
+- DATA_ENTRY PHASE_STEPs must have: structureDisplay field + CORRECTION SUB_PHASE_STEP child
+- Preserve all dataCaptureSteps exactly as they appear in the source node
+- Keep all empty arrays and boolean flags
 
-PHASE_STEP TYPES AND REQUIREMENTS:
-
-1. DATA_ENTRY steps (for user input) MUST have:
-   - type: "DATA_ENTRY"
-   - structureDisplay: {"structureId": <phaseStepId>, "displayOrderNumber": <order>}
-   - children: [<CORRECTION SUB_PHASE_STEP>]  // REQUIRED!
-   - dataCaptureSteps: array with primary data capture step (GENERAL_TEXT, GENERAL_NUMERIC, etc.)
-
-2. ITERATION_REVIEW steps (for phase completion) MUST have:
-   - type: "ITERATION_REVIEW"
-   - phaseStepOrderNumber: 1000 (always)
-   - NO structureDisplay field
-   - NO children array (empty)
-   - dataCaptureSteps: [ITERATION_READY_FOR_REVIEW, ITERATION_COMPLETE]
-
-3. CORRECTION SUB_PHASE_STEP (required child of DATA_ENTRY):
-   - level: "SUB_PHASE_STEP"
-   - type: "CORRECTION"
-   - correctionType: "PRIMARY_DATA_ENTRY"
-   - Must have same ID fields as parent (phaseStepId, phaseOrderNumber, etc.)
-   - dataCaptureSteps: [
-       {"type": "CORRECTION_START", "optionalStep": true, "primaryStep": false},
-       {"type": "CORRECTION_END", "optionalStep": true, "primaryStep": false},
-       {"type": "CORRECTION_CANCEL", "optionalStep": true, "primaryStep": false}
-     ]
-
-DATA CAPTURE STEP TYPES:
-
-When copying dataCaptureSteps, preserve the exact type and all its fields:
-
-- GENERAL_TEXT: Text entry
-  Required fields: headerStep, suggestedEntries, linkProductionRecordConfigured, qrIncludedInGeneralText
-
-- GENERAL_NUMERIC: Numeric entry
-  Required fields: decimalPrecision, minDecimalPrecision, precisionMethod, displayPrecision, scientificNotation, scientificNotationExponent, measureIncludedInGeneralNumeric
-
-- NOTES: Optional notes
-  Required fields: allValuesCurrent: true, optionalStep: true, primaryStep: false
-
-- SIGN_OFF: Witness/Verify signatures
-  Required fields: signOffType ("WITNESS", "VERIFY", or "RELEASE"), uniqueSignOffRequired, multiIterationSignOffAllowed
-
-- ITERATION_READY_FOR_REVIEW, ITERATION_COMPLETE: Phase iteration steps
-- STRUCTURE_COMPLETE: Auto-captured completion step
-- PHASE_COMPLETE_BUTTON: Phase completion button
-- TRAINING_OVERRIDE, PREDECESSOR_OVERRIDE: Optional override steps
-- CORRECTION_START, CORRECTION_END, CORRECTION_CANCEL: Correction workflow steps
-
-MODIFICATION PATTERNS:
-
-1. Adding a PHASE:
-   - Find existing PHASE in template
-   - Copy entire PHASE structure including ALL fields
-   - Update: id, globalSerialId, localReferenceId (new UUIDs), title, phaseId, phaseOrderNumber
-   - Update all child PHASE_STEPs with new parent references
-   - Ensure ITERATION_REVIEW step has phaseStepOrderNumber: 1000
-   - Preserve exact dataCaptureSteps order from baseline
-
-2. Adding a DATA_ENTRY PHASE_STEP:
-   - Find existing DATA_ENTRY step in template
-   - Copy entire structure including:
-     * structureDisplay field
-     * CORRECTION SUB_PHASE_STEP child with 3 dataCaptureSteps
-     * All dataCaptureSteps with exact field structure
-   - Update IDs and references
-   - Increment phaseStepOrderNumber by 1
-
-3. Adding an OPERATION:
-   - Find existing OPERATION in template
-   - Copy entire structure including all nested PHASE nodes
-   - Update IDs and references
-
-VALIDATION CHECKLIST:
-- [ ] All PHASE nodes have ITERATION_REVIEW child at phaseStepOrderNumber 1000
-- [ ] All DATA_ENTRY steps have structureDisplay field
-- [ ] All DATA_ENTRY steps have CORRECTION SUB_PHASE_STEP child
-- [ ] All dataCaptureSteps have required type-specific fields
-- [ ] All empty arrays preserved from baseline
-- [ ] All boolean flags preserved from baseline
-- [ ] parentId references updated correctly
-
-Return ONLY valid JSON - no explanation, no markdown code blocks, just the modified template JSON.`;
+Return ONLY the modified JSON, no explanations.`;
 
 // API Routes
 // GET /api/templates - List all available templates
