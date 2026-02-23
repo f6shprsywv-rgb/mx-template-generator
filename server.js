@@ -31,6 +31,8 @@ app.use(express.json());
 // System prompt for Claude API - explains Mx template structure
 const SYSTEM_PROMPT = `You are a MasterControl Mx template expert. You can add phases, steps, and properties based on your knowledge of the structure.
 
+IMPORTANT: The baseline template has been stripped of verbose fields (dataCaptureSteps, instructionParts, apiColumns, etc.) to reduce token count. When you return the modified template, maintain the same stripped format - only include the structural changes. The server will merge your changes back into the full template.
+
 ISA-88 HIERARCHY:
 PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
 
@@ -266,6 +268,45 @@ function validateTemplateStructure(template) {
   };
 }
 
+// Strip verbose arrays from template to reduce token count while preserving structure
+function stripTemplateForAI(template) {
+  const stripped = JSON.parse(JSON.stringify(template)); // Deep clone
+
+  function stripNode(node) {
+    // Only remove truly verbose array fields that Claude never modifies
+    // Keep everything else intact so Claude's response is valid
+    const verboseArrays = [
+      'instructionParts',       // Can be very long text
+      'apiColumns',             // Technical metadata
+      'logbookTemplateIds',     // Reference IDs
+      'tags',                   // Metadata
+      'productStructures',      // Can be large nested structures
+      'templateTableEntities',  // Table data
+      'simplifiedNavigationRoleIds',  // Role IDs
+      'structureRoles',         // Role configuration
+      'simplifiedNavigationRoles',
+      'receivedDataProjections',
+      'projectedDataProjections'
+    ];
+
+    // Replace verbose arrays with empty arrays (preserves structure)
+    verboseArrays.forEach(field => {
+      if (node[field] && Array.isArray(node[field]) && node[field].length > 0) {
+        node[field] = [];
+      }
+    });
+
+    // Recursively strip children
+    if (node.children && Array.isArray(node.children)) {
+      node.children = node.children.map(child => stripNode(child));
+    }
+
+    return node;
+  }
+
+  return stripNode(stripped);
+}
+
 // POST /api/generate - Generate modified template with unique IDs
 app.post('/api/generate', async (req, res) => {
   try {
@@ -291,6 +332,12 @@ app.post('/api/generate', async (req, res) => {
 
     if (request && request.trim()) {
       try {
+        // Strip unnecessary fields to reduce token count
+        const strippedTemplate = stripTemplateForAI(templateData);
+        const strippedSize = JSON.stringify(strippedTemplate).length;
+        const originalSize = JSON.stringify(templateData).length;
+        console.log(`Template stripped: ${originalSize} → ${strippedSize} chars (${Math.round((1 - strippedSize/originalSize) * 100)}% reduction)`);
+
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
@@ -308,7 +355,7 @@ app.post('/api/generate', async (req, res) => {
               content: [
                 {
                   type: "text",
-                  text: `Baseline template:\n${JSON.stringify(templateData, null, 2)}`,
+                  text: `Baseline template:\n${JSON.stringify(strippedTemplate, null, 2)}`,
                   cache_control: { type: "ephemeral" }
                 },
                 {
