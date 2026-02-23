@@ -294,12 +294,28 @@ app.post('/api/generate', async (req, res) => {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 24000,
-          system: SYSTEM_PROMPT,
+          max_tokens: 10000,  // Reduced to fit within 200k context window
+          system: [
+            {
+              type: "text",
+              text: SYSTEM_PROMPT,
+              cache_control: { type: "ephemeral" }
+            }
+          ],
           messages: [
             {
               role: "user",
-              content: `Baseline template:\n${JSON.stringify(templateData, null, 2)}\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
+              content: [
+                {
+                  type: "text",
+                  text: `Baseline template:\n${JSON.stringify(templateData, null, 2)}`,
+                  cache_control: { type: "ephemeral" }
+                },
+                {
+                  type: "text",
+                  text: `\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
+                }
+              ]
             }
           ]
         });
