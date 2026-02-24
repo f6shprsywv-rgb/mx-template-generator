@@ -400,8 +400,11 @@ app.post('/api/generate', async (req, res) => {
           throw new Error('Invalid template structure: ' + validation.errors.join(', '));
         }
 
-        // If validation passed, use the modified template
-        templateData = modifiedTemplate;
+        // TEMPORARY: Keep using original full template until we implement proper merge
+        // Claude's stripped response is missing required fields for MasterControl import
+        // TODO: Implement merge of Claude's structural changes into original template
+        console.log('Claude validation passed, but keeping original full template');
+        // templateData = modifiedTemplate; // DON'T use stripped response
         modifiedByAI = true;
       } catch (error) {
         console.error('AI modification failed:', error.message);
