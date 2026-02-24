@@ -382,7 +382,7 @@ app.post('/api/generate', async (req, res) => {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-          max_tokens: 10000,  // Reduced to fit within 200k context window
+          max_tokens: 50000,  // Increased to allow full template response
           system: [
             {
               type: "text",
