@@ -209,13 +209,9 @@
         <div id="template-info" class="template-info hidden"></div>
       </div>
 
-      <div class="form-group">
-        <label for="request-textarea">Describe the changes you want (optional):</label>
-        <textarea
-          id="request-textarea"
-          placeholder="Leave empty to just generate a copy with new IDs, or describe changes..."
-        ></textarea>
-      </div>
+      <p class="help-text" style="margin: 20px 0; color: #666;">
+        This tool creates a copy of your selected template with unique UUIDs, allowing you to import it into MasterControl without ID conflicts.
+      </p>
 
       <div class="button-container">
         <button type="submit" id="generate-button">Generate Template</button>
@@ -320,7 +316,7 @@
 
     async function generateTemplate() {
       const templateId = document.getElementById('template-select').value;
-      const request = document.getElementById('request-textarea').value;
+      const request = '';  // No modifications, just clone with new UUIDs
       const loadingState = document.getElementById('loading-state');
       const successMessage = document.getElementById('success-message');
       const errorMessage = document.getElementById('error-message');
@@ -333,8 +329,6 @@
         successMessage.classList.remove('show');
         return;
       }
-
-      // Request is optional - empty request will just regenerate IDs
 
       // Hide previous messages and show loading
       errorMessage.classList.remove('show');

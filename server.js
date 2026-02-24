@@ -404,29 +404,8 @@ app.post('/api/generate', async (req, res) => {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     let templateData = JSON.parse(fileContent);
 
-    // If user provided a modification request, use Claude API to modify the template
-    let modifiedByAI = false;
-    let aiError = null;
-
-    if (request && request.trim()) {
-      try {
-        console.log('Applying programmatic modifications...');
-        const result = applySimpleModifications(templateData, request);
-
-        if (result.modified) {
-          console.log('✓ Modification applied:', result.message);
-          templateData = result.template;
-          modifiedByAI = true;
-        } else {
-          console.log('✗ No modification applied:', result.message);
-          aiError = `Command not recognized. Supported: "add phase", "duplicate phase"`;
-        }
-      } catch (error) {
-        console.error('Modification failed:', error.message);
-        aiError = error.message;
-        // Fall back to original template - UUID regeneration happens below
-      }
-    }
+    // Simple template cloner - just regenerate UUIDs (no modifications)
+    console.log('Creating template clone with unique UUIDs...');
 
     // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors
     console.log('Regenerating UUIDs...');
@@ -452,9 +431,7 @@ app.post('/api/generate', async (req, res) => {
     res.json({
       success: true,
       filename: filename,
-      template: templateData,
-      modifiedByAI: modifiedByAI,
-      aiError: aiError
+      template: templateData
     });
   } catch (error) {
     console.error('Error generating template:', error);
