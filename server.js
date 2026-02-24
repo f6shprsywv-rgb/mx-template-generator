@@ -196,64 +196,27 @@ app.get('/api/templates/:id', (req, res) => {
   }
 });
 
-// Helper function: Collect all numeric IDs in template
-function collectIds(obj, idSet = new Set()) {
-  if (typeof obj !== 'object' || obj === null) return idSet;
-  if (Array.isArray(obj)) {
-    obj.forEach(item => collectIds(item, idSet));
-    return idSet;
-  }
-  if (obj.id && typeof obj.id === 'number') {
-    idSet.add(obj.id);
-  }
-  Object.values(obj).forEach(value => collectIds(value, idSet));
-  return idSet;
-}
-
-// Helper function: Recursively regenerate all UUIDs and numeric IDs in template
+// Helper function: Recursively regenerate ONLY UUIDs (keep numeric IDs unchanged)
 function regenerateUUIDs(obj) {
-  // First pass: Collect all existing numeric IDs
-  const oldIds = collectIds(obj);
-  console.log(`Collected ${oldIds.size} unique numeric IDs`);
-
-  // Create mapping from old IDs to new IDs
-  const idMap = new Map();
-  let baseId = Date.now();
-  oldIds.forEach(oldId => {
-    idMap.set(oldId, baseId++);
-  });
-  console.log(`Created ID mappings from ${Math.min(...oldIds)} to ${baseId - oldIds.size}`);
-
-  // Second pass: Replace all IDs
-  function replaceIds(obj) {
-    if (typeof obj !== 'object' || obj === null) {
-      return obj;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map(item => replaceIds(item));
-    }
-
-    const newObj = {};
-    for (const key in obj) {
-      if (key === 'globalSerialId' || key === 'localReferenceId') {
-        // Generate new UUID
-        newObj[key] = uuidv4();
-      } else if (key === 'id' && typeof obj[key] === 'number') {
-        // Replace numeric ID
-        newObj[key] = idMap.get(obj[key]) || obj[key];
-      } else if ((key.endsWith('Id') || key === 'structureId') && typeof obj[key] === 'number') {
-        // Replace any reference to numeric IDs
-        newObj[key] = idMap.get(obj[key]) || obj[key];
-      } else {
-        // Recursively process nested objects/arrays
-        newObj[key] = replaceIds(obj[key]);
-      }
-    }
-    return newObj;
+  if (typeof obj !== 'object' || obj === null) {
+    return obj;
   }
 
-  return replaceIds(obj);
+  if (Array.isArray(obj)) {
+    return obj.map(item => regenerateUUIDs(item));
+  }
+
+  const newObj = {};
+  for (const key in obj) {
+    if (key === 'globalSerialId' || key === 'localReferenceId') {
+      // Generate new UUID for these fields only
+      newObj[key] = uuidv4();
+    } else {
+      // Recursively process nested objects/arrays, keep everything else unchanged
+      newObj[key] = regenerateUUIDs(obj[key]);
+    }
+  }
+  return newObj;
 }
 
 // Validate template structure follows ISA-88 hierarchy
@@ -469,10 +432,10 @@ Return ONLY this JSON, nothing else.`
       }
     }
 
-    // CRITICAL: Regenerate all UUIDs and numeric IDs to avoid duplicate ID errors
-    console.log('Before ID regeneration:', templateData.id);
+    // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors
+    console.log('Regenerating UUIDs...');
     templateData = regenerateUUIDs(templateData);
-    console.log('After ID regeneration:', templateData.id);
+    console.log('UUIDs regenerated successfully');
 
     // Update title to indicate it's a generated copy
     if (templateData.title) {
