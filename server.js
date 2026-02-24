@@ -371,12 +371,24 @@ app.post('/api/generate', async (req, res) => {
         let responseText = message.content[0].text;
         console.log('Received response from Claude API');
 
-        // Try to extract JSON if Claude wrapped it in markdown
+        // Extract JSON from response (handle various markdown formats)
         let jsonText = responseText.trim();
-        const jsonMatch = responseText.match(/```json?\s*([\s\S]*?)\s*```/);
+
+        // Try multiple patterns to extract JSON
+        // Pattern 1: ```json ... ```
+        let jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
         if (jsonMatch) {
-          jsonText = jsonMatch[1];
+          jsonText = jsonMatch[1].trim();
+        } else {
+          // Pattern 2: ``` ... ``` (without json tag)
+          jsonMatch = jsonText.match(/```\s*([\s\S]*?)\s*```/);
+          if (jsonMatch) {
+            jsonText = jsonMatch[1].trim();
+          }
         }
+
+        // Remove any remaining backticks
+        jsonText = jsonText.replace(/^`+|`+$/g, '').trim();
 
         // Parse Claude's response as JSON
         const modifiedTemplate = JSON.parse(jsonText);
