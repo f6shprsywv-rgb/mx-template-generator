@@ -334,12 +334,7 @@
         return;
       }
 
-      if (!request.trim()) {
-        errorMessage.innerHTML = 'Please describe the changes you want';
-        errorMessage.classList.add('show');
-        successMessage.classList.remove('show');
-        return;
-      }
+      // Request is optional - empty request will just regenerate IDs
 
       // Hide previous messages and show loading
       errorMessage.classList.remove('show');
