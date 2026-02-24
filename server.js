@@ -272,6 +272,89 @@ function validateTemplateStructure(template) {
   };
 }
 
+// Helper function: Apply simple programmatic modifications
+function applySimpleModifications(template, request) {
+  const clonedTemplate = JSON.parse(JSON.stringify(template));
+
+  // Parse request for simple commands
+  const lowerRequest = request.toLowerCase().trim();
+
+  // Command: "add phase" or "add a phase" or "duplicate phase"
+  if (lowerRequest.match(/add|duplicate|create/i) && lowerRequest.match(/phase/i)) {
+    return addPhase(clonedTemplate, request);
+  }
+
+  // No recognized command - return unchanged
+  return { modified: false, template: clonedTemplate, message: 'No recognized command' };
+}
+
+// Add a new phase by duplicating the last one
+function addPhase(template, request) {
+  // Find UNIT_PROCEDURE (contains phases)
+  const unitProcedure = template.children?.[0];
+  if (!unitProcedure || unitProcedure.level !== 'UNIT_PROCEDURE') {
+    return { modified: false, template, message: 'Could not find UNIT_PROCEDURE' };
+  }
+
+  // Find OPERATION (contains phases)
+  const operation = unitProcedure.children?.[0];
+  if (!operation || operation.level !== 'OPERATION') {
+    return { modified: false, template, message: 'Could not find OPERATION' };
+  }
+
+  // Find phases
+  const phases = operation.children?.filter(child => child.level === 'PHASE') || [];
+  if (phases.length === 0) {
+    return { modified: false, template, message: 'No phases found to duplicate' };
+  }
+
+  // Clone the last phase
+  const lastPhase = phases[phases.length - 1];
+  const newPhase = JSON.parse(JSON.stringify(lastPhase));
+
+  // Generate new IDs for the new phase and all children
+  const idOffset = Date.now();
+  function updateIds(node, offset) {
+    if (node.id) node.id = node.id + offset;
+    if (node.masterTemplateId) node.masterTemplateId += offset;
+    if (node.unitProcedureId) node.unitProcedureId += offset;
+    if (node.operationId) node.operationId += offset;
+    if (node.phaseId) node.phaseId += offset;
+    if (node.phaseStepId) node.phaseStepId += offset;
+    if (node.parentId) node.parentId += offset;
+    if (node.globalSerialId) node.globalSerialId = uuidv4();
+    if (node.localReferenceId) node.localReferenceId = uuidv4();
+
+    // Update IDs in nested structures
+    if (node.dataCaptureSteps) {
+      node.dataCaptureSteps.forEach(step => {
+        if (step.id) step.id += offset;
+        if (step.localReferenceId) step.localReferenceId = uuidv4();
+        if (step.structureId) step.structureId += offset;
+      });
+    }
+
+    if (node.children) {
+      node.children.forEach(child => updateIds(child, offset));
+    }
+  }
+
+  updateIds(newPhase, idOffset);
+
+  // Update order number and title
+  newPhase.phaseOrderNumber = lastPhase.phaseOrderNumber + 1;
+  newPhase.title = `${lastPhase.title} (Copy)`;
+
+  // Add to operation
+  operation.children.push(newPhase);
+
+  return {
+    modified: true,
+    template,
+    message: `Added new phase: "${newPhase.title}"`
+  };
+}
+
 // Strip verbose arrays from template to reduce token count while preserving structure
 function stripTemplateForAI(template) {
   const stripped = JSON.parse(JSON.stringify(template)); // Deep clone
@@ -336,97 +419,19 @@ app.post('/api/generate', async (req, res) => {
 
     if (request && request.trim()) {
       try {
-        // Strip unnecessary fields to reduce token count
-        const strippedTemplate = stripTemplateForAI(templateData);
-        const strippedSize = JSON.stringify(strippedTemplate).length;
-        const originalSize = JSON.stringify(templateData).length;
-        console.log(`Template stripped: ${originalSize} → ${strippedSize} chars (${Math.round((1 - strippedSize/originalSize) * 100)}% reduction)`);
+        console.log('Applying programmatic modifications...');
+        const result = applySimpleModifications(templateData, request);
 
-        console.log('Sending request to Claude API...');
-        const message = await anthropic.messages.create({
-          model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-          max_tokens: 2000,  // Small response for just describing changes
-          system: [
-            {
-              type: "text",
-              text: "You are an expert at analyzing MasterControl Mx templates and understanding what modifications are needed.",
-              cache_control: { type: "ephemeral" }
-            }
-          ],
-          messages: [
-            {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: `Template structure:\n${JSON.stringify(strippedTemplate, null, 2)}`,
-                  cache_control: { type: "ephemeral" }
-                },
-                {
-                  type: "text",
-                  text: `\n\nUser request: ${request}\n\nAnalyze this request and respond with a simple status JSON:
-{
-  "understood": true,
-  "summary": "brief description of what needs to be done",
-  "feasible": true
-}
-
-Return ONLY this JSON, nothing else.`
-                }
-              ]
-            }
-          ]
-        });
-
-        // Extract text content from response
-        let responseText = message.content[0].text;
-        console.log('Received response from Claude API');
-        console.log('Response preview:', responseText.substring(0, 200));
-
-        // Extract JSON from response (handle various formats)
-        let jsonText = responseText.trim();
-
-        // Try to extract JSON from markdown code blocks
-        // Pattern 1: ```json ... ```
-        let jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch) {
-          jsonText = jsonMatch[1].trim();
+        if (result.modified) {
+          console.log('✓ Modification applied:', result.message);
+          templateData = result.template;
+          modifiedByAI = true;
         } else {
-          // Pattern 2: ``` ... ``` (without json tag)
-          jsonMatch = jsonText.match(/```\s*([\s\S]*?)\s*```/);
-          if (jsonMatch) {
-            jsonText = jsonMatch[1].trim();
-          }
-        }
-
-        // Remove any remaining markdown artifacts
-        jsonText = jsonText.replace(/^`+|`+$/g, '').trim();
-
-        // If text starts with "json" or "JSON", remove it
-        jsonText = jsonText.replace(/^(json|JSON)\s*/i, '').trim();
-
-        // Find first { and last } to extract pure JSON
-        const firstBrace = jsonText.indexOf('{');
-        const lastBrace = jsonText.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          jsonText = jsonText.substring(firstBrace, lastBrace + 1);
-        }
-
-        console.log('Extracted JSON preview:', jsonText.substring(0, 200));
-
-        // Parse Claude's response as status JSON
-        const status = JSON.parse(jsonText);
-
-        if (status.understood && status.feasible) {
-          console.log('Claude understood request:', status.summary);
-          // Keep using original template with new IDs
-          // Future: Apply actual modifications based on Claude's analysis
-          modifiedByAI = false; // Not actually modified, just validated
-        } else {
-          throw new Error('Request not feasible: ' + status.summary);
+          console.log('✗ No modification applied:', result.message);
+          aiError = `Command not recognized. Supported: "add phase", "duplicate phase"`;
         }
       } catch (error) {
-        console.error('AI modification failed:', error.message);
+        console.error('Modification failed:', error.message);
         aiError = error.message;
         // Fall back to original template - UUID regeneration happens below
       }
