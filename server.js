@@ -382,11 +382,11 @@ app.post('/api/generate', async (req, res) => {
         console.log('Sending request to Claude API...');
         const message = await anthropic.messages.create({
           model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-20250514",
-          max_tokens: 50000,  // Increased to allow full template response
+          max_tokens: 2000,  // Small response for just describing changes
           system: [
             {
               type: "text",
-              text: SYSTEM_PROMPT,
+              text: "You are an expert at analyzing MasterControl Mx templates and understanding what modifications are needed.",
               cache_control: { type: "ephemeral" }
             }
           ],
@@ -396,12 +396,19 @@ app.post('/api/generate', async (req, res) => {
               content: [
                 {
                   type: "text",
-                  text: `Baseline template:\n${JSON.stringify(strippedTemplate, null, 2)}`,
+                  text: `Template structure:\n${JSON.stringify(strippedTemplate, null, 2)}`,
                   cache_control: { type: "ephemeral" }
                 },
                 {
                   type: "text",
-                  text: `\n\nUser request: ${request}\n\nReturn the complete modified template as a single valid JSON object. Ensure all brackets and braces are properly closed. Do not include any text before or after the JSON.`
+                  text: `\n\nUser request: ${request}\n\nAnalyze this request and respond with a simple status JSON:
+{
+  "understood": true,
+  "summary": "brief description of what needs to be done",
+  "feasible": true
+}
+
+Return ONLY this JSON, nothing else.`
                 }
               ]
             }
@@ -443,23 +450,18 @@ app.post('/api/generate', async (req, res) => {
         }
 
         console.log('Extracted JSON preview:', jsonText.substring(0, 200));
-        console.log('Extracted JSON length:', jsonText.length, 'characters');
-        console.log('Extracted JSON end:', jsonText.substring(jsonText.length - 200));
 
-        // Parse Claude's response as JSON
-        const modifiedTemplate = JSON.parse(jsonText);
+        // Parse Claude's response as status JSON
+        const status = JSON.parse(jsonText);
 
-        // Validate structure
-        const validation = validateTemplateStructure(modifiedTemplate);
-        if (!validation.valid) {
-          console.error('Validation errors:', validation.errors);
-          throw new Error('Invalid template structure: ' + validation.errors.join(', '));
+        if (status.understood && status.feasible) {
+          console.log('Claude understood request:', status.summary);
+          // Keep using original template with new IDs
+          // Future: Apply actual modifications based on Claude's analysis
+          modifiedByAI = false; // Not actually modified, just validated
+        } else {
+          throw new Error('Request not feasible: ' + status.summary);
         }
-
-        // Use Claude's modified template
-        console.log('Claude validation passed, using modified template');
-        templateData = modifiedTemplate;
-        modifiedByAI = true;
       } catch (error) {
         console.error('AI modification failed:', error.message);
         aiError = error.message;
