@@ -312,34 +312,25 @@ function addPhase(template, request) {
   const lastPhase = phases[phases.length - 1];
   const newPhase = JSON.parse(JSON.stringify(lastPhase));
 
-  // Generate new IDs for the new phase and all children
-  const idOffset = Date.now();
-  function updateIds(node, offset) {
-    if (node.id) node.id = node.id + offset;
-    if (node.masterTemplateId) node.masterTemplateId += offset;
-    if (node.unitProcedureId) node.unitProcedureId += offset;
-    if (node.operationId) node.operationId += offset;
-    if (node.phaseId) node.phaseId += offset;
-    if (node.phaseStepId) node.phaseStepId += offset;
-    if (node.parentId) node.parentId += offset;
+  // Generate new UUIDs only (keep numeric IDs unchanged - MasterControl is okay with duplicates)
+  function updateUUIDs(node) {
     if (node.globalSerialId) node.globalSerialId = uuidv4();
     if (node.localReferenceId) node.localReferenceId = uuidv4();
 
-    // Update IDs in nested structures
+    // Update UUIDs in dataCaptureSteps
     if (node.dataCaptureSteps) {
       node.dataCaptureSteps.forEach(step => {
-        if (step.id) step.id += offset;
         if (step.localReferenceId) step.localReferenceId = uuidv4();
-        if (step.structureId) step.structureId += offset;
       });
     }
 
+    // Recursively update children
     if (node.children) {
-      node.children.forEach(child => updateIds(child, offset));
+      node.children.forEach(child => updateUUIDs(child));
     }
   }
 
-  updateIds(newPhase, idOffset);
+  updateUUIDs(newPhase);
 
   // Update order number and title
   newPhase.phaseOrderNumber = lastPhase.phaseOrderNumber + 1;
