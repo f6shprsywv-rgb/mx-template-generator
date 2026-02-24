@@ -192,27 +192,62 @@ app.get('/api/templates/:id', (req, res) => {
   }
 });
 
-// Helper function: Recursively regenerate all UUIDs in template
-function regenerateUUIDs(obj) {
-  if (typeof obj !== 'object' || obj === null) {
-    return obj;
-  }
-
+// Helper function: Collect all numeric IDs in template
+function collectIds(obj, idSet = new Set()) {
+  if (typeof obj !== 'object' || obj === null) return idSet;
   if (Array.isArray(obj)) {
-    return obj.map(item => regenerateUUIDs(item));
+    obj.forEach(item => collectIds(item, idSet));
+    return idSet;
+  }
+  if (obj.id && typeof obj.id === 'number') {
+    idSet.add(obj.id);
+  }
+  Object.values(obj).forEach(value => collectIds(value, idSet));
+  return idSet;
+}
+
+// Helper function: Recursively regenerate all UUIDs and numeric IDs in template
+function regenerateUUIDs(obj) {
+  // First pass: Collect all existing numeric IDs
+  const oldIds = collectIds(obj);
+
+  // Create mapping from old IDs to new IDs
+  const idMap = new Map();
+  let baseId = Date.now();
+  oldIds.forEach(oldId => {
+    idMap.set(oldId, baseId++);
+  });
+
+  // Second pass: Replace all IDs
+  function replaceIds(obj) {
+    if (typeof obj !== 'object' || obj === null) {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(item => replaceIds(item));
+    }
+
+    const newObj = {};
+    for (const key in obj) {
+      if (key === 'globalSerialId' || key === 'localReferenceId') {
+        // Generate new UUID
+        newObj[key] = uuidv4();
+      } else if (key === 'id' && typeof obj[key] === 'number') {
+        // Replace numeric ID
+        newObj[key] = idMap.get(obj[key]) || obj[key];
+      } else if ((key.endsWith('Id') || key === 'structureId') && typeof obj[key] === 'number') {
+        // Replace any reference to numeric IDs
+        newObj[key] = idMap.get(obj[key]) || obj[key];
+      } else {
+        // Recursively process nested objects/arrays
+        newObj[key] = replaceIds(obj[key]);
+      }
+    }
+    return newObj;
   }
 
-  const newObj = {};
-  for (const key in obj) {
-    if (key === 'globalSerialId' || key === 'localReferenceId') {
-      // Generate new UUID for these fields
-      newObj[key] = uuidv4();
-    } else {
-      // Recursively process nested objects/arrays
-      newObj[key] = regenerateUUIDs(obj[key]);
-    }
-  }
-  return newObj;
+  return replaceIds(obj);
 }
 
 // Validate template structure follows ISA-88 hierarchy
