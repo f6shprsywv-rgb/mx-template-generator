@@ -401,7 +401,7 @@ app.post('/api/generate', async (req, res) => {
                 },
                 {
                   type: "text",
-                  text: `\n\nUser request: ${request}\n\nIMPORTANT: Return ONLY the complete modified JSON template. No markdown, no code blocks, no explanations. Start with { and end with }. The response must be valid JSON.`
+                  text: `\n\nUser request: ${request}\n\nReturn the complete modified template as a single valid JSON object. Ensure all brackets and braces are properly closed. Do not include any text before or after the JSON.`
                 }
               ]
             }
@@ -443,6 +443,8 @@ app.post('/api/generate', async (req, res) => {
         }
 
         console.log('Extracted JSON preview:', jsonText.substring(0, 200));
+        console.log('Extracted JSON length:', jsonText.length, 'characters');
+        console.log('Extracted JSON end:', jsonText.substring(jsonText.length - 200));
 
         // Parse Claude's response as JSON
         const modifiedTemplate = JSON.parse(jsonText);
