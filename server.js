@@ -210,6 +210,7 @@ function collectIds(obj, idSet = new Set()) {
 function regenerateUUIDs(obj) {
   // First pass: Collect all existing numeric IDs
   const oldIds = collectIds(obj);
+  console.log(`Collected ${oldIds.size} unique numeric IDs`);
 
   // Create mapping from old IDs to new IDs
   const idMap = new Map();
@@ -217,6 +218,7 @@ function regenerateUUIDs(obj) {
   oldIds.forEach(oldId => {
     idMap.set(oldId, baseId++);
   });
+  console.log(`Created ID mappings from ${Math.min(...oldIds)} to ${baseId - oldIds.size}`);
 
   // Second pass: Replace all IDs
   function replaceIds(obj) {
@@ -461,8 +463,10 @@ app.post('/api/generate', async (req, res) => {
       }
     }
 
-    // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors in MasterControl
+    // CRITICAL: Regenerate all UUIDs and numeric IDs to avoid duplicate ID errors
+    console.log('Before ID regeneration:', templateData.id);
     templateData = regenerateUUIDs(templateData);
+    console.log('After ID regeneration:', templateData.id);
 
     // Update title to indicate it's a generated copy
     if (templateData.title) {
