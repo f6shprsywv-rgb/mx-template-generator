@@ -29,9 +29,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // System prompt for Claude API - explains Mx template structure
-const SYSTEM_PROMPT = `You are a MasterControl Mx template expert. You can add phases, steps, and properties based on your knowledge of the structure.
+const SYSTEM_PROMPT = `You are an expert at modifying MasterControl Mx template JSON files.
 
-IMPORTANT: The baseline template has been stripped of verbose fields (dataCaptureSteps, instructionParts, apiColumns, etc.) to reduce token count. When you return the modified template, maintain the same stripped format - only include the structural changes. The server will merge your changes back into the full template.
+CRITICAL RULES:
+1. Return ONLY valid JSON - no markdown, no code fences, no explanations
+2. Preserve the exact structure of the input template
+3. Only modify what the user requests
+4. Keep all existing fields intact
 
 ISA-88 HIERARCHY:
 PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
@@ -397,7 +401,7 @@ app.post('/api/generate', async (req, res) => {
                 },
                 {
                   type: "text",
-                  text: `\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
+                  text: `\n\nUser request: ${request}\n\nIMPORTANT: Return ONLY the complete modified JSON template. No markdown, no code blocks, no explanations. Start with { and end with }. The response must be valid JSON.`
                 }
               ]
             }
@@ -450,11 +454,9 @@ app.post('/api/generate', async (req, res) => {
           throw new Error('Invalid template structure: ' + validation.errors.join(', '));
         }
 
-        // TEMPORARY: Keep using original full template until we implement proper merge
-        // Claude's stripped response is missing required fields for MasterControl import
-        // TODO: Implement merge of Claude's structural changes into original template
-        console.log('Claude validation passed, but keeping original full template');
-        // templateData = modifiedTemplate; // DON'T use stripped response
+        // Use Claude's modified template
+        console.log('Claude validation passed, using modified template');
+        templateData = modifiedTemplate;
         modifiedByAI = true;
       } catch (error) {
         console.error('AI modification failed:', error.message);
