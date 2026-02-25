@@ -369,6 +369,8 @@ function addPhaseWithOptions(template, request) {
 
   // Add to operation
   operation.children.push(newPhase);
+  console.log(`Phase added. Operation now has ${operation.children.length} children`);
+  console.log(`New phase title: ${newPhase.title}, order: ${newPhase.phaseOrderNumber}`);
 
   const props = [];
   if (hasWitness) props.push('witness');
@@ -526,7 +528,11 @@ app.post('/api/generate', async (req, res) => {
 
         if (result.modified) {
           console.log('✓ Modification applied:', result.message);
+          const phaseCount = templateData.children?.[0]?.children?.[0]?.children?.filter(c => c.level === 'PHASE').length || 0;
+          console.log(`Before assignment: ${phaseCount} phases`);
           templateData = result.template;
+          const newPhaseCount = templateData.children?.[0]?.children?.[0]?.children?.filter(c => c.level === 'PHASE').length || 0;
+          console.log(`After assignment: ${newPhaseCount} phases`);
           modificationMessage = result.message;
         } else {
           console.log('✗ No modification applied:', result.message);
