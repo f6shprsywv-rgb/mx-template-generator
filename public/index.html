@@ -209,9 +209,19 @@
         <div id="template-info" class="template-info hidden"></div>
       </div>
 
-      <p class="help-text" style="margin: 20px 0; color: #666;">
-        This tool creates a copy of your selected template with unique UUIDs, allowing you to import it into MasterControl without ID conflicts.
-      </p>
+      <div class="form-group">
+        <label for="request-textarea">Modification command (optional):</label>
+        <textarea
+          id="request-textarea"
+          placeholder='Try: "add phase Quality Check with witness and verify"'
+        ></textarea>
+        <small style="display: block; margin-top: 5px; color: #666;">
+          Examples:<br>
+          • add phase Quality Check with witness<br>
+          • add phase Verification with witness and verify<br>
+          • Leave empty to just clone with new UUIDs
+        </small>
+      </div>
 
       <div class="button-container">
         <button type="submit" id="generate-button">Generate Template</button>
@@ -316,7 +326,7 @@
 
     async function generateTemplate() {
       const templateId = document.getElementById('template-select').value;
-      const request = '';  // No modifications, just clone with new UUIDs
+      const request = document.getElementById('request-textarea').value;
       const loadingState = document.getElementById('loading-state');
       const successMessage = document.getElementById('success-message');
       const errorMessage = document.getElementById('error-message');

@@ -276,20 +276,22 @@ function validateTemplateStructure(template) {
 function applySimpleModifications(template, request) {
   const clonedTemplate = JSON.parse(JSON.stringify(template));
 
-  // Parse request for simple commands
+  // Parse request for specific commands
   const lowerRequest = request.toLowerCase().trim();
 
-  // Command: "add phase" or "add a phase" or "duplicate phase"
-  if (lowerRequest.match(/add|duplicate|create/i) && lowerRequest.match(/phase/i)) {
-    return addPhase(clonedTemplate, request);
+  // Command: "add phase" with name and properties
+  // Example: "add phase Quality Check with witness"
+  // Example: "add phase Verification with witness and verify"
+  if (lowerRequest.includes('add phase') || lowerRequest.includes('add a phase')) {
+    return addPhaseWithOptions(clonedTemplate, request);
   }
 
   // No recognized command - return unchanged
-  return { modified: false, template: clonedTemplate, message: 'No recognized command' };
+  return { modified: false, template: clonedTemplate, message: 'Command not recognized. Try: "add phase [Name] with [witness/verify/notes]"' };
 }
 
-// Add a new phase by duplicating the last one
-function addPhase(template, request) {
+// Add a new phase with custom name and properties
+function addPhaseWithOptions(template, request) {
   // Find UNIT_PROCEDURE (contains phases)
   const unitProcedure = template.children?.[0];
   if (!unitProcedure || unitProcedure.level !== 'UNIT_PROCEDURE') {
@@ -332,18 +334,129 @@ function addPhase(template, request) {
 
   updateUUIDs(newPhase);
 
-  // Update order number and title
+  // Parse phase name from request
+  // Example: "add phase Quality Check with witness"
+  let phaseName = 'New Phase';
+  const phaseMatch = request.match(/add (?:a )?phase\s+([^w]+?)(?:\s+with|$)/i);
+  if (phaseMatch && phaseMatch[1]) {
+    phaseName = phaseMatch[1].trim();
+  }
+
+  // Parse properties from request
+  const hasWitness = /with\s+witness|witness/i.test(request);
+  const hasVerify = /with\s+verify|verify/i.test(request);
+  const hasNotes = /with\s+notes|notes/i.test(request);
+
+  // Update phase properties
   newPhase.phaseOrderNumber = lastPhase.phaseOrderNumber + 1;
-  newPhase.title = `${lastPhase.title} (Copy)`;
+  newPhase.title = phaseName;
+
+  // Add witness/verify/notes to first DATA_ENTRY step if requested
+  if (hasWitness || hasVerify || hasNotes) {
+    const dataEntryStep = findFirstDataEntryStep(newPhase);
+    if (dataEntryStep && dataEntryStep.dataCaptureSteps) {
+      if (hasWitness && !hasSignOffType(dataEntryStep, 'WITNESS')) {
+        addSignOff(dataEntryStep, 'WITNESS');
+      }
+      if (hasVerify && !hasSignOffType(dataEntryStep, 'VERIFY')) {
+        addSignOff(dataEntryStep, 'VERIFY');
+      }
+      if (hasNotes && !hasDataCaptureType(dataEntryStep, 'NOTES')) {
+        addNotes(dataEntryStep);
+      }
+    }
+  }
 
   // Add to operation
   operation.children.push(newPhase);
 
+  const props = [];
+  if (hasWitness) props.push('witness');
+  if (hasVerify) props.push('verify');
+  if (hasNotes) props.push('notes');
+  const propsText = props.length > 0 ? ` with ${props.join(', ')}` : '';
+
   return {
     modified: true,
     template,
-    message: `Added new phase: "${newPhase.title}"`
+    message: `Added new phase: "${phaseName}"${propsText}`
   };
+}
+
+// Helper: Find first DATA_ENTRY step in phase
+function findFirstDataEntryStep(phase) {
+  if (!phase.children) return null;
+  for (const child of phase.children) {
+    if (child.type === 'DATA_ENTRY' && child.level === 'PHASE_STEP') {
+      return child;
+    }
+  }
+  return null;
+}
+
+// Helper: Check if step has a specific sign-off type
+function hasSignOffType(step, signOffType) {
+  if (!step.dataCaptureSteps) return false;
+  return step.dataCaptureSteps.some(dcs =>
+    dcs.type === 'SIGN_OFF' && dcs.signOffType === signOffType
+  );
+}
+
+// Helper: Check if step has a specific data capture type
+function hasDataCaptureType(step, type) {
+  if (!step.dataCaptureSteps) return false;
+  return step.dataCaptureSteps.some(dcs => dcs.type === type);
+}
+
+// Helper: Add sign-off to step
+function addSignOff(step, signOffType) {
+  const signOff = {
+    type: 'SIGN_OFF',
+    signOffType: signOffType,
+    primaryStep: false,
+    optionalStep: true,
+    uniqueSignOffRequired: signOffType === 'VERIFY',
+    multiIterationSignOffAllowed: false,
+    allValuesCurrent: true,
+    autoCaptured: false,
+    configurationGroup: false,
+    appendToProductId: false,
+    replaceDefaultQuantity: false,
+    attachedToTableCell: false,
+    dataCaptureRoles: [],
+    notificationRoleIds: [],
+    actionTriggers: [],
+    receivedDataProjections: [],
+    projectedDataProjections: [],
+    autoNaEnabled: false,
+    temporaryChange: false,
+    dataCaptureStepNotifications: []
+  };
+  step.dataCaptureSteps.push(signOff);
+}
+
+// Helper: Add notes to step
+function addNotes(step) {
+  const notes = {
+    type: 'NOTES',
+    allValuesCurrent: true,
+    optionalStep: true,
+    primaryStep: false,
+    autoCaptured: false,
+    configurationGroup: false,
+    appendToProductId: false,
+    replaceDefaultQuantity: false,
+    attachedToTableCell: false,
+    dataCaptureRoles: [],
+    notificationRoleIds: [],
+    actionTriggers: [],
+    receivedDataProjections: [],
+    projectedDataProjections: [],
+    autoNaEnabled: false,
+    temporaryChange: false,
+    dataCaptureStepNotifications: []
+  };
+  step.dataCaptureSteps.push(notes);
 }
 
 // Strip verbose arrays from template to reduce token count while preserving structure
@@ -404,8 +517,28 @@ app.post('/api/generate', async (req, res) => {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     let templateData = JSON.parse(fileContent);
 
-    // Simple template cloner - just regenerate UUIDs (no modifications)
-    console.log('Creating template clone with unique UUIDs...');
+    // Apply modifications if requested
+    let modificationMessage = null;
+    if (request && request.trim()) {
+      try {
+        console.log('Applying modifications...');
+        const result = applySimpleModifications(templateData, request);
+
+        if (result.modified) {
+          console.log('✓ Modification applied:', result.message);
+          templateData = result.template;
+          modificationMessage = result.message;
+        } else {
+          console.log('✗ No modification applied:', result.message);
+          modificationMessage = result.message;
+        }
+      } catch (error) {
+        console.error('Modification failed:', error.message);
+        modificationMessage = `Error: ${error.message}`;
+      }
+    } else {
+      console.log('No modifications requested - creating clone with unique UUIDs');
+    }
 
     // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors
     console.log('Regenerating UUIDs...');
