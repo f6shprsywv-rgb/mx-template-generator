@@ -647,54 +647,60 @@ app.post('/api/generate', async (req, res) => {
               receivedDataProjections: [],
               projectedDataProjections: [],
               dataCaptureSteps: [
-                {
-                  id: currentId++,
-                  localReferenceId: uuidv4(),
-                  structureId: dataEntryStepId,
-                  type: "GENERAL_TEXT",
-                  allValuesCurrent: false,
-                  autoCaptured: false,
-                  optionalStep: false,
-                  configurationGroup: false,
-                  appendToProductId: false,
-                  replaceDefaultQuantity: false,
-                  primaryStep: true,
-                  attachedToTableCell: false,
-                  dataCaptureRoles: [],
-                  notificationRoleIds: [],
-                  actionTriggers: [
-                    {
-                      id: currentId++,
-                      dataCaptureStepId: currentId - 1,
-                      displayedOnInterface: true,
-                      label: "Character Limit: ",
-                      minimumValue: 1,
-                      minimumValuePrecision: 0,
-                      maximumValue: 120,
-                      maximumValuePrecision: 0,
-                      tolerancePercentConfigured: false,
-                      triggerType: "OUT_OF_NUMERIC_RANGE",
-                      actions: [
-                        {
-                          id: currentId++,
-                          stepActionTriggerId: currentId - 2,
-                          type: "REJECT"
-                        }
-                      ],
-                      notifications: [],
-                      notApplicableStructures: []
-                    }
-                  ],
-                  receivedDataProjections: [],
-                  projectedDataProjections: [],
-                  autoNaEnabled: false,
-                  temporaryChange: false,
-                  headerStep: false,
-                  suggestedEntries: [],
-                  linkProductionRecordConfigured: false,
-                  qrIncludedInGeneralText: false,
-                  dataCaptureStepNotifications: []
-                },
+                (() => {
+                  const generalTextId = currentId++;
+                  const actionTriggerId = currentId++;
+                  const actionId = currentId++;
+
+                  return {
+                    id: generalTextId,
+                    localReferenceId: uuidv4(),
+                    structureId: dataEntryStepId,
+                    type: "GENERAL_TEXT",
+                    allValuesCurrent: false,
+                    autoCaptured: false,
+                    optionalStep: false,
+                    configurationGroup: false,
+                    appendToProductId: false,
+                    replaceDefaultQuantity: false,
+                    primaryStep: true,
+                    attachedToTableCell: false,
+                    dataCaptureRoles: [],
+                    notificationRoleIds: [],
+                    actionTriggers: [
+                      {
+                        id: actionTriggerId,
+                        dataCaptureStepId: generalTextId,
+                        displayedOnInterface: true,
+                        label: "Character Limit: ",
+                        minimumValue: 1,
+                        minimumValuePrecision: 0,
+                        maximumValue: 120,
+                        maximumValuePrecision: 0,
+                        tolerancePercentConfigured: false,
+                        triggerType: "OUT_OF_NUMERIC_RANGE",
+                        actions: [
+                          {
+                            id: actionId,
+                            stepActionTriggerId: actionTriggerId,
+                            type: "REJECT"
+                          }
+                        ],
+                        notifications: [],
+                        notApplicableStructures: []
+                      }
+                    ],
+                    receivedDataProjections: [],
+                    projectedDataProjections: [],
+                    autoNaEnabled: false,
+                    temporaryChange: false,
+                    headerStep: false,
+                    suggestedEntries: [],
+                    linkProductionRecordConfigured: false,
+                    qrIncludedInGeneralText: false,
+                    dataCaptureStepNotifications: []
+                  };
+                })(),
                 ...(hasWitness ? [{
                   id: currentId++,
                   localReferenceId: uuidv4(),
