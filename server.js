@@ -311,7 +311,12 @@ app.post('/api/generate', async (req, res) => {
 
         if (addPhaseMatch) {
           const phaseTitle = addPhaseMatch[1].trim();
-          console.log(`Adding phase: "${phaseTitle}"`);
+
+          // Parse optional properties (witness, verify)
+          const hasWitness = /\bwitness\b/i.test(request);
+          const hasVerify = /\bverify\b/i.test(request);
+
+          console.log(`Adding phase: "${phaseTitle}" (witness: ${hasWitness}, verify: ${hasVerify})`);
 
           // Find max ID in entire template
           const findMaxId = (obj) => {
@@ -421,7 +426,57 @@ app.post('/api/generate', async (req, res) => {
                 autoNaEnabled: false,
                 temporaryChange: false,
                 dataCaptureStepNotifications: []
-              }
+              },
+              ...(hasWitness ? [{
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: iterationReviewStepId,
+                type: "SIGN_OFF",
+                signOffType: "WITNESS",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: false,
+                attachedToTableCell: false,
+                uniqueSignOffRequired: false,
+                multiIterationSignOffAllowed: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              }] : []),
+              ...(hasVerify ? [{
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: iterationReviewStepId,
+                type: "SIGN_OFF",
+                signOffType: "VERIFY",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: false,
+                attachedToTableCell: false,
+                uniqueSignOffRequired: true,
+                multiIterationSignOffAllowed: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              }] : [])
             ],
             apiColumns: [],
             logbookTemplateIds: [],
