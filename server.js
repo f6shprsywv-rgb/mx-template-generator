@@ -307,16 +307,25 @@ app.post('/api/generate', async (req, res) => {
     if (request && request.trim()) {
       try {
         // Parse the modification request
-        const addPhaseMatch = request.match(/add (?:a )?phase\s+(.+?)(?:\s+with|$)/i);
+        let addPhaseMatch = request.match(/add (?:a )?phase\s+(.+?)(?:\s+with|$)/i);
+
+        // Try alternate pattern: "phase step called [name]"
+        if (!addPhaseMatch) {
+          addPhaseMatch = request.match(/phase step called\s+(.+?)(?:\.|$)/i);
+        }
 
         if (addPhaseMatch) {
           const phaseTitle = addPhaseMatch[1].trim();
 
-          // Parse optional properties (witness, verify)
+          // Parse optional properties
           const hasWitness = /\bwitness\b/i.test(request);
           const hasVerify = /\bverify\b/i.test(request);
+          const displayOnRBE = /\bdisplay on rbe\b/i.test(request) || /\breview by exception\b/i.test(request);
 
-          console.log(`Adding phase: "${phaseTitle}" (witness: ${hasWitness}, verify: ${hasVerify})`);
+          // Check if user wants a general text step (data entry)
+          const wantsGeneralText = /\bgeneral text\b/i.test(request) || /\bphase step\b/i.test(request);
+
+          console.log(`Adding phase: "${phaseTitle}" (witness: ${hasWitness}, verify: ${hasVerify}, generalText: ${wantsGeneralText}, displayOnRBE: ${displayOnRBE})`);
 
           // Find max ID in entire template
           const findMaxId = (obj) => {
@@ -427,7 +436,7 @@ app.post('/api/generate', async (req, res) => {
                 temporaryChange: false,
                 dataCaptureStepNotifications: []
               },
-              ...(hasWitness ? [{
+              ...(!wantsGeneralText && hasWitness ? [{
                 id: currentId++,
                 localReferenceId: uuidv4(),
                 structureId: iterationReviewStepId,
@@ -452,7 +461,7 @@ app.post('/api/generate', async (req, res) => {
                 temporaryChange: false,
                 dataCaptureStepNotifications: []
               }] : []),
-              ...(hasVerify ? [{
+              ...(!wantsGeneralText && hasVerify ? [{
                 id: currentId++,
                 localReferenceId: uuidv4(),
                 structureId: iterationReviewStepId,
@@ -491,6 +500,219 @@ app.post('/api/generate', async (req, res) => {
             isSubTemplate: false
           };
 
+          // Create DATA_ENTRY step if requested
+          let dataEntryStep = null;
+          if (wantsGeneralText) {
+            const dataEntryStepId = currentId++;
+            const correctionStepId = currentId++;
+
+            // Create CORRECTION sub-phase-step
+            const correctionSubStep = {
+              id: correctionStepId,
+              globalSerialId: uuidv4(),
+              localReferenceId: uuidv4(),
+              title: "",
+              repeatable: false,
+              notApplicableConfigured: false,
+              alwaysDisplayedOnReviewByException: false,
+              type: "CORRECTION",
+              correctionType: "PRIMARY_DATA_ENTRY",
+              masterTemplateId: templateData.id,
+              unitProcedureId: templateData.children[0].id,
+              operationId: operation.id,
+              phaseId: newPhaseId,
+              phaseStepId: dataEntryStepId,
+              unitProcedureOrderNumber: 1,
+              operationOrderNumber: 1,
+              phaseOrderNumber: newPhaseOrderNumber,
+              phaseStepOrderNumber: 1,
+              parentId: dataEntryStepId,
+              level: "SUB_PHASE_STEP",
+              children: [],
+              simplifiedNavigationRoleIds: [],
+              structureRoles: [],
+              instructionParts: [],
+              receivedDataProjections: [],
+              projectedDataProjections: [],
+              dataCaptureSteps: [
+                {
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: correctionStepId,
+                  type: "CORRECTION_START",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: true,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                },
+                {
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: correctionStepId,
+                  type: "CORRECTION_END",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: true,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                },
+                {
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: correctionStepId,
+                  type: "CORRECTION_CANCEL",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: true,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                }
+              ],
+              apiColumns: [],
+              logbookTemplateIds: [],
+              tags: [],
+              productStructures: [],
+              templateTableEntities: [],
+              subTemplate: false,
+              configurationGroupPlaceholder: false,
+              temporaryChangeStructure: false,
+              optionStructure: false,
+              simplifiedNavigationRoles: [],
+              isSubTemplate: false
+            };
+
+            // Create DATA_ENTRY step with GENERAL_TEXT
+            dataEntryStep = {
+              id: dataEntryStepId,
+              globalSerialId: uuidv4(),
+              localReferenceId: uuidv4(),
+              title: phaseTitle,
+              repeatable: false,
+              notApplicableConfigured: false,
+              alwaysDisplayedOnReviewByException: displayOnRBE,
+              type: "DATA_ENTRY",
+              masterTemplateId: templateData.id,
+              unitProcedureId: templateData.children[0].id,
+              operationId: operation.id,
+              phaseId: newPhaseId,
+              phaseStepId: dataEntryStepId,
+              unitProcedureOrderNumber: 1,
+              operationOrderNumber: 1,
+              phaseOrderNumber: newPhaseOrderNumber,
+              phaseStepOrderNumber: 1,
+              parentId: newPhaseId,
+              level: "PHASE_STEP",
+              children: [correctionSubStep],
+              simplifiedNavigationRoleIds: [],
+              structureRoles: [],
+              instructionParts: [],
+              structureDisplay: {
+                structureId: dataEntryStepId,
+                displayOrderNumber: 1
+              },
+              receivedDataProjections: [],
+              projectedDataProjections: [],
+              dataCaptureSteps: [
+                {
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "GENERAL_TEXT",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: true,
+                  attachedToTableCell: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  headerStep: false,
+                  suggestedEntries: [],
+                  linkProductionRecordConfigured: false,
+                  qrIncludedInGeneralText: false,
+                  dataCaptureStepNotifications: []
+                },
+                ...(hasWitness ? [{
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "SIGN_OFF",
+                  signOffType: "WITNESS",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  uniqueSignOffRequired: false,
+                  multiIterationSignOffAllowed: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                }] : [])
+              ],
+              apiColumns: [],
+              logbookTemplateIds: [],
+              tags: [],
+              productStructures: [],
+              templateTableEntities: [],
+              subTemplate: false,
+              configurationGroupPlaceholder: false,
+              temporaryChangeStructure: false,
+              optionStructure: false,
+              simplifiedNavigationRoles: [],
+              isSubTemplate: false
+            };
+          }
+
           // Create new phase with required dataCaptureSteps
           const newPhase = {
             id: newPhaseId,
@@ -505,7 +727,7 @@ app.post('/api/generate', async (req, res) => {
             operationId: operation.id,
             unitProcedureId: templateData.children[0].id,
             masterTemplateId: templateData.id,
-            children: [iterationReviewStep],
+            children: dataEntryStep ? [dataEntryStep, iterationReviewStep] : [iterationReviewStep],
             dataCaptureSteps: [
               {
                 id: currentId++,
