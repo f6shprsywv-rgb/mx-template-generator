@@ -662,7 +662,29 @@ app.post('/api/generate', async (req, res) => {
                   attachedToTableCell: false,
                   dataCaptureRoles: [],
                   notificationRoleIds: [],
-                  actionTriggers: [],
+                  actionTriggers: [
+                    {
+                      id: currentId++,
+                      dataCaptureStepId: currentId - 1,
+                      displayedOnInterface: true,
+                      label: "Character Limit: ",
+                      minimumValue: 1,
+                      minimumValuePrecision: 0,
+                      maximumValue: 120,
+                      maximumValuePrecision: 0,
+                      tolerancePercentConfigured: false,
+                      triggerType: "OUT_OF_NUMERIC_RANGE",
+                      actions: [
+                        {
+                          id: currentId++,
+                          stepActionTriggerId: currentId - 2,
+                          type: "REJECT"
+                        }
+                      ],
+                      notifications: [],
+                      notApplicableStructures: []
+                    }
+                  ],
                   receivedDataProjections: [],
                   projectedDataProjections: [],
                   autoNaEnabled: false,
