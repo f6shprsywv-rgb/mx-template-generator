@@ -28,14 +28,16 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Body parsing middleware
 app.use(express.json());
 
-// System prompt for Claude API - explains Mx template structure
-const SYSTEM_PROMPT = `You are an expert at modifying MasterControl Mx template JSON files.
+// Disable caching for all responses
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
-CRITICAL RULES:
-1. Return ONLY valid JSON - no markdown, no code fences, no explanations
-2. Preserve the exact structure of the input template
-3. Only modify what the user requests
-4. Keep all existing fields intact
+// System prompt for Claude API - explains Mx template structure
+const SYSTEM_PROMPT = `You are a MasterControl Mx template expert. You can add phases, steps, and properties based on your knowledge of the structure.
 
 ISA-88 HIERARCHY:
 PROCEDURE → UNIT_PROCEDURE → OPERATION → PHASE → PHASE_STEP → SUB_PHASE_STEP
@@ -133,11 +135,18 @@ All dataCaptureSteps need: id, localReferenceId, structureId, allValuesCurrent, 
 
 INSTRUCTIONS:
 - When adding phase: Create complete structure from templates above
-- Use existing template for ID ranges and increment appropriately
+- **ID GENERATION (CRITICAL):**
+  1. Find the maximum "id" value in the entire template using recursive search
+  2. New phase ID = max_id + 1
+  3. All child steps/substeps must also have unique IDs: max_id + 2, max_id + 3, etc.
+  4. For PHASE level: "id" and "phaseId" must be THE SAME value
+  5. All "structureId" references must match their parent structure's "id"
+  6. Never reuse existing IDs - this causes silent import failures
 - Generate new UUIDs for globalSerialId and localReferenceId
 - If user requests properties (witness, verify, notes), add corresponding dataCaptureSteps
 - Always include ITERATION_REVIEW step at phaseStepOrderNumber 1000
 - DATA_ENTRY steps must have structureDisplay and CORRECTION child
+- New phase should be inserted BEFORE the ITERATION_REVIEW phase (order < 1000)
 
 Return ONLY the modified JSON template.`;
 
@@ -196,7 +205,7 @@ app.get('/api/templates/:id', (req, res) => {
   }
 });
 
-// Helper function: Recursively regenerate ONLY UUIDs (keep numeric IDs unchanged)
+// Helper function: Recursively regenerate all UUIDs in template
 function regenerateUUIDs(obj) {
   if (typeof obj !== 'object' || obj === null) {
     return obj;
@@ -209,10 +218,10 @@ function regenerateUUIDs(obj) {
   const newObj = {};
   for (const key in obj) {
     if (key === 'globalSerialId' || key === 'localReferenceId') {
-      // Generate new UUID for these fields only
+      // Generate new UUID for these fields
       newObj[key] = uuidv4();
     } else {
-      // Recursively process nested objects/arrays, keep everything else unchanged
+      // Recursively process nested objects/arrays
       newObj[key] = regenerateUUIDs(obj[key]);
     }
   }
@@ -272,234 +281,6 @@ function validateTemplateStructure(template) {
   };
 }
 
-// Helper function: Apply simple programmatic modifications
-function applySimpleModifications(template, request) {
-  const clonedTemplate = JSON.parse(JSON.stringify(template));
-
-  // Parse request for specific commands
-  const lowerRequest = request.toLowerCase().trim();
-
-  // Command: "add phase" with name and properties
-  // Example: "add phase Quality Check with witness"
-  // Example: "add phase Verification with witness and verify"
-  if (lowerRequest.includes('add phase') || lowerRequest.includes('add a phase')) {
-    return addPhaseWithOptions(clonedTemplate, request);
-  }
-
-  // No recognized command - return unchanged
-  return { modified: false, template: clonedTemplate, message: 'Command not recognized. Try: "add phase [Name] with [witness/verify/notes]"' };
-}
-
-// Add a new phase with custom name and properties
-function addPhaseWithOptions(template, request) {
-  // Find UNIT_PROCEDURE (contains phases)
-  const unitProcedure = template.children?.[0];
-  if (!unitProcedure || unitProcedure.level !== 'UNIT_PROCEDURE') {
-    return { modified: false, template, message: 'Could not find UNIT_PROCEDURE' };
-  }
-
-  // Find OPERATION (contains phases)
-  const operation = unitProcedure.children?.[0];
-  if (!operation || operation.level !== 'OPERATION') {
-    return { modified: false, template, message: 'Could not find OPERATION' };
-  }
-
-  // Find phases
-  const phases = operation.children?.filter(child => child.level === 'PHASE') || [];
-  if (phases.length === 0) {
-    return { modified: false, template, message: 'No phases found to duplicate' };
-  }
-
-  // Clone the last phase
-  const lastPhase = phases[phases.length - 1];
-  const newPhase = JSON.parse(JSON.stringify(lastPhase));
-
-  // Generate new UUIDs only (keep numeric IDs unchanged - MasterControl is okay with duplicates)
-  function updateUUIDs(node) {
-    if (node.globalSerialId) node.globalSerialId = uuidv4();
-    if (node.localReferenceId) node.localReferenceId = uuidv4();
-
-    // Update UUIDs in dataCaptureSteps
-    if (node.dataCaptureSteps) {
-      node.dataCaptureSteps.forEach(step => {
-        if (step.localReferenceId) step.localReferenceId = uuidv4();
-      });
-    }
-
-    // Recursively update children
-    if (node.children) {
-      node.children.forEach(child => updateUUIDs(child));
-    }
-  }
-
-  updateUUIDs(newPhase);
-
-  // Parse phase name from request
-  // Example: "add phase Quality Check with witness"
-  let phaseName = 'New Phase';
-  const phaseMatch = request.match(/add (?:a )?phase\s+([^w]+?)(?:\s+with|$)/i);
-  if (phaseMatch && phaseMatch[1]) {
-    phaseName = phaseMatch[1].trim();
-  }
-
-  // Parse properties from request
-  const hasWitness = /with\s+witness|witness/i.test(request);
-  const hasVerify = /with\s+verify|verify/i.test(request);
-  const hasNotes = /with\s+notes|notes/i.test(request);
-
-  // Update phase properties
-  newPhase.phaseOrderNumber = lastPhase.phaseOrderNumber + 1;
-  newPhase.title = phaseName;
-
-  // Add witness/verify/notes to first DATA_ENTRY step if requested
-  if (hasWitness || hasVerify || hasNotes) {
-    const dataEntryStep = findFirstDataEntryStep(newPhase);
-    if (dataEntryStep && dataEntryStep.dataCaptureSteps) {
-      if (hasWitness && !hasSignOffType(dataEntryStep, 'WITNESS')) {
-        addSignOff(dataEntryStep, 'WITNESS');
-      }
-      if (hasVerify && !hasSignOffType(dataEntryStep, 'VERIFY')) {
-        addSignOff(dataEntryStep, 'VERIFY');
-      }
-      if (hasNotes && !hasDataCaptureType(dataEntryStep, 'NOTES')) {
-        addNotes(dataEntryStep);
-      }
-    }
-  }
-
-  // Add to operation
-  operation.children.push(newPhase);
-  console.log(`Phase added. Operation now has ${operation.children.length} children`);
-  console.log(`New phase title: ${newPhase.title}, order: ${newPhase.phaseOrderNumber}`);
-
-  const props = [];
-  if (hasWitness) props.push('witness');
-  if (hasVerify) props.push('verify');
-  if (hasNotes) props.push('notes');
-  const propsText = props.length > 0 ? ` with ${props.join(', ')}` : '';
-
-  return {
-    modified: true,
-    template,
-    message: `Added new phase: "${phaseName}"${propsText}`
-  };
-}
-
-// Helper: Find first DATA_ENTRY step in phase
-function findFirstDataEntryStep(phase) {
-  if (!phase.children) return null;
-  for (const child of phase.children) {
-    if (child.type === 'DATA_ENTRY' && child.level === 'PHASE_STEP') {
-      return child;
-    }
-  }
-  return null;
-}
-
-// Helper: Check if step has a specific sign-off type
-function hasSignOffType(step, signOffType) {
-  if (!step.dataCaptureSteps) return false;
-  return step.dataCaptureSteps.some(dcs =>
-    dcs.type === 'SIGN_OFF' && dcs.signOffType === signOffType
-  );
-}
-
-// Helper: Check if step has a specific data capture type
-function hasDataCaptureType(step, type) {
-  if (!step.dataCaptureSteps) return false;
-  return step.dataCaptureSteps.some(dcs => dcs.type === type);
-}
-
-// Helper: Add sign-off to step
-function addSignOff(step, signOffType) {
-  const signOff = {
-    type: 'SIGN_OFF',
-    signOffType: signOffType,
-    primaryStep: false,
-    optionalStep: true,
-    uniqueSignOffRequired: signOffType === 'VERIFY',
-    multiIterationSignOffAllowed: false,
-    allValuesCurrent: true,
-    autoCaptured: false,
-    configurationGroup: false,
-    appendToProductId: false,
-    replaceDefaultQuantity: false,
-    attachedToTableCell: false,
-    dataCaptureRoles: [],
-    notificationRoleIds: [],
-    actionTriggers: [],
-    receivedDataProjections: [],
-    projectedDataProjections: [],
-    autoNaEnabled: false,
-    temporaryChange: false,
-    dataCaptureStepNotifications: []
-  };
-  step.dataCaptureSteps.push(signOff);
-}
-
-// Helper: Add notes to step
-function addNotes(step) {
-  const notes = {
-    type: 'NOTES',
-    allValuesCurrent: true,
-    optionalStep: true,
-    primaryStep: false,
-    autoCaptured: false,
-    configurationGroup: false,
-    appendToProductId: false,
-    replaceDefaultQuantity: false,
-    attachedToTableCell: false,
-    dataCaptureRoles: [],
-    notificationRoleIds: [],
-    actionTriggers: [],
-    receivedDataProjections: [],
-    projectedDataProjections: [],
-    autoNaEnabled: false,
-    temporaryChange: false,
-    dataCaptureStepNotifications: []
-  };
-  step.dataCaptureSteps.push(notes);
-}
-
-// Strip verbose arrays from template to reduce token count while preserving structure
-function stripTemplateForAI(template) {
-  const stripped = JSON.parse(JSON.stringify(template)); // Deep clone
-
-  function stripNode(node) {
-    // Only remove truly verbose array fields that Claude never modifies
-    // Keep everything else intact so Claude's response is valid
-    const verboseArrays = [
-      'instructionParts',       // Can be very long text
-      'apiColumns',             // Technical metadata
-      'logbookTemplateIds',     // Reference IDs
-      'tags',                   // Metadata
-      'productStructures',      // Can be large nested structures
-      'templateTableEntities',  // Table data
-      'simplifiedNavigationRoleIds',  // Role IDs
-      'structureRoles',         // Role configuration
-      'simplifiedNavigationRoles',
-      'receivedDataProjections',
-      'projectedDataProjections'
-    ];
-
-    // Replace verbose arrays with empty arrays (preserves structure)
-    verboseArrays.forEach(field => {
-      if (node[field] && Array.isArray(node[field]) && node[field].length > 0) {
-        node[field] = [];
-      }
-    });
-
-    // Recursively strip children
-    if (node.children && Array.isArray(node.children)) {
-      node.children = node.children.map(child => stripNode(child));
-    }
-
-    return node;
-  }
-
-  return stripNode(stripped);
-}
-
 // POST /api/generate - Generate modified template with unique IDs
 app.post('/api/generate', async (req, res) => {
   try {
@@ -519,37 +300,333 @@ app.post('/api/generate', async (req, res) => {
     const fileContent = fs.readFileSync(filePath, 'utf8');
     let templateData = JSON.parse(fileContent);
 
-    // Apply modifications if requested
-    let modificationMessage = null;
+    // If user provided a modification request, apply it programmatically
+    let modifiedByAI = false;
+    let aiError = null;
+
     if (request && request.trim()) {
       try {
-        console.log('Applying modifications...');
-        const result = applySimpleModifications(templateData, request);
+        // Parse the modification request
+        const addPhaseMatch = request.match(/add (?:a )?phase\s+(.+?)(?:\s+with|$)/i);
 
-        if (result.modified) {
-          console.log('✓ Modification applied:', result.message);
-          const phaseCount = templateData.children?.[0]?.children?.[0]?.children?.filter(c => c.level === 'PHASE').length || 0;
-          console.log(`Before assignment: ${phaseCount} phases`);
-          templateData = result.template;
-          const newPhaseCount = templateData.children?.[0]?.children?.[0]?.children?.filter(c => c.level === 'PHASE').length || 0;
-          console.log(`After assignment: ${newPhaseCount} phases`);
-          modificationMessage = result.message;
+        if (addPhaseMatch) {
+          const phaseTitle = addPhaseMatch[1].trim();
+          console.log(`Adding phase: "${phaseTitle}"`);
+
+          // Find max ID in entire template
+          const findMaxId = (obj) => {
+            let maxId = 0;
+            const traverse = (o) => {
+              if (typeof o === 'object' && o !== null) {
+                if (o.id && typeof o.id === 'number') {
+                  maxId = Math.max(maxId, o.id);
+                }
+                Object.values(o).forEach(v => traverse(v));
+              }
+            };
+            traverse(obj);
+            return maxId;
+          };
+
+          const maxId = findMaxId(templateData);
+          const newPhaseId = maxId + 1;
+
+          console.log(`Max ID found: ${maxId}, New phase ID: ${newPhaseId}`);
+
+          // Find the OPERATION node
+          const operation = templateData.children[0].children[0];
+
+          // Find ITERATION_REVIEW phase (phaseOrderNumber 1000)
+          const iterationReviewIndex = operation.children.findIndex(
+            c => c.level === 'PHASE' && c.phaseOrderNumber === 1000
+          );
+
+          // Calculate next phaseOrderNumber (max of existing non-ITERATION_REVIEW phases + 1)
+          const maxPhaseOrder = Math.max(...operation.children
+            .filter(c => c.level === 'PHASE' && c.phaseOrderNumber < 1000)
+            .map(c => c.phaseOrderNumber), 0);
+          const newPhaseOrderNumber = maxPhaseOrder + 1;
+
+          // Create ITERATION_REVIEW step for the new phase
+          let currentId = newPhaseId + 1;
+          const iterationReviewStepId = currentId++;
+
+          const iterationReviewStep = {
+            id: iterationReviewStepId,
+            globalSerialId: uuidv4(),
+            localReferenceId: uuidv4(),
+            title: "",
+            repeatable: false,
+            notApplicableConfigured: false,
+            alwaysDisplayedOnReviewByException: false,
+            type: "ITERATION_REVIEW",
+            masterTemplateId: templateData.id,
+            unitProcedureId: templateData.children[0].id,
+            operationId: operation.id,
+            phaseId: newPhaseId,
+            phaseStepId: iterationReviewStepId,
+            unitProcedureOrderNumber: 1,
+            operationOrderNumber: 1,
+            phaseOrderNumber: newPhaseOrderNumber,
+            phaseStepOrderNumber: 1000,
+            parentId: newPhaseId,
+            level: "PHASE_STEP",
+            children: [],
+            simplifiedNavigationRoleIds: [],
+            structureRoles: [],
+            instructionParts: [],
+            receivedDataProjections: [],
+            projectedDataProjections: [],
+            dataCaptureSteps: [
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: iterationReviewStepId,
+                type: "ITERATION_READY_FOR_REVIEW",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: false,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              },
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: iterationReviewStepId,
+                type: "ITERATION_COMPLETE",
+                allValuesCurrent: false,
+                autoCaptured: true,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: true,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              }
+            ],
+            apiColumns: [],
+            logbookTemplateIds: [],
+            tags: [],
+            productStructures: [],
+            templateTableEntities: [],
+            subTemplate: false,
+            configurationGroupPlaceholder: false,
+            temporaryChangeStructure: false,
+            optionStructure: false,
+            simplifiedNavigationRoles: [],
+            isSubTemplate: false
+          };
+
+          // Create new phase with required dataCaptureSteps
+          const newPhase = {
+            id: newPhaseId,
+            globalSerialId: uuidv4(),
+            localReferenceId: uuidv4(),
+            title: phaseTitle,
+            level: 'PHASE',
+            phaseId: newPhaseId,
+            type: 'PARENT',
+            phaseOrderNumber: newPhaseOrderNumber,
+            parentId: operation.id,
+            operationId: operation.id,
+            unitProcedureId: templateData.children[0].id,
+            masterTemplateId: templateData.id,
+            children: [iterationReviewStep],
+            dataCaptureSteps: [
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: newPhaseId,
+                type: "TRAINING_OVERRIDE",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: true,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: false,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              },
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: newPhaseId,
+                type: "PHASE_COMPLETE_BUTTON",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: true,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              },
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: newPhaseId,
+                type: "PREDECESSOR_OVERRIDE",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: true,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: false,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              },
+              {
+                id: currentId++,
+                localReferenceId: uuidv4(),
+                structureId: newPhaseId,
+                type: "STRUCTURE_COMPLETE",
+                allValuesCurrent: false,
+                autoCaptured: true,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: true,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              }
+            ],
+            simplifiedNavigationRoleIds: [],
+            structureRoles: [],
+            instructionParts: [],
+            receivedDataProjections: [],
+            projectedDataProjections: [],
+            apiColumns: [],
+            logbookTemplateIds: [],
+            tags: [],
+            productStructures: [],
+            templateTableEntities: [],
+            subTemplate: false,
+            temporaryChangeStructure: false,
+            optionStructure: false,
+            configurationGroupPlaceholder: false,
+            simplifiedNavigationRoles: [],
+            isSubTemplate: false,
+            repeatable: false,
+            notApplicableConfigured: false,
+            alwaysDisplayedOnReviewByException: false,
+            unitProcedureOrderNumber: 1,
+            operationOrderNumber: 1
+          };
+
+          // Insert before ITERATION_REVIEW
+          operation.children.splice(iterationReviewIndex, 0, newPhase);
+
+          console.log(`Phase "${phaseTitle}" added successfully with ID ${newPhaseId}`);
+          modifiedByAI = true;
         } else {
-          console.log('✗ No modification applied:', result.message);
-          modificationMessage = result.message;
+          console.log('No matching modification pattern found');
         }
       } catch (error) {
-        console.error('Modification failed:', error.message);
-        modificationMessage = `Error: ${error.message}`;
+        console.error('Programmatic modification failed:', error.message);
+        aiError = error.message;
       }
-    } else {
-      console.log('No modifications requested - creating clone with unique UUIDs');
     }
 
-    // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors
-    console.log('Regenerating UUIDs...');
+    // OLD CLAUDE API CODE (disabled)
+    if (false && request && request.trim()) {
+      try {
+        console.log('Sending request to Claude API...');
+        const message = await anthropic.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 24000,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: `Baseline template:\n${JSON.stringify(templateData, null, 2)}\n\nUser request: ${request}\n\nReturn the modified template JSON only.`
+            }
+          ]
+        });
+
+        // Extract text content from response
+        let responseText = message.content[0].text;
+        console.log('Received response from Claude API');
+
+        // Try to extract JSON if Claude wrapped it in markdown
+        let jsonText = responseText.trim();
+        const jsonMatch = responseText.match(/```json?\s*([\s\S]*?)\s*```/);
+        if (jsonMatch) {
+          jsonText = jsonMatch[1];
+        }
+
+        // Parse Claude's response as JSON
+        const modifiedTemplate = JSON.parse(jsonText);
+
+        // Validate structure
+        const validation = validateTemplateStructure(modifiedTemplate);
+        if (!validation.valid) {
+          console.error('Validation errors:', validation.errors);
+          throw new Error('Invalid template structure: ' + validation.errors.join(', '));
+        }
+
+        // If validation passed, use the modified template
+        templateData = modifiedTemplate;
+        modifiedByAI = true;
+      } catch (error) {
+        console.error('AI modification failed:', error.message);
+        aiError = error.message;
+        // Fall back to original template - UUID regeneration happens below
+      }
+    }
+
+    // CRITICAL: Regenerate all UUIDs to avoid duplicate ID errors in MasterControl
     templateData = regenerateUUIDs(templateData);
-    console.log('UUIDs regenerated successfully');
 
     // Update title to indicate it's a generated copy
     if (templateData.title) {
@@ -563,14 +640,17 @@ app.post('/api/generate', async (req, res) => {
       templateData.masterTemplateDetails.productId = `${templateData.masterTemplateDetails.productId}-GEN-${timestamp}`;
     }
 
-    // Generate filename with template name and timestamp
-    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    // Generate filename with template name and full timestamp
+    const now = new Date();
+    const timestamp = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, -5); // YYYY-MM-DD_HH-MM-SS
     const filename = `${templateId}-${timestamp}.mt`;
 
     res.json({
       success: true,
       filename: filename,
-      template: templateData
+      template: templateData,
+      modifiedByAI: modifiedByAI,
+      aiError: aiError
     });
   } catch (error) {
     console.error('Error generating template:', error);

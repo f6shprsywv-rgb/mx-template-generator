@@ -377,6 +377,12 @@
 
         const result = await response.json();
 
+        // DEBUG: Log what we received
+        console.log('=== API RESPONSE DEBUG ===');
+        console.log('Full result:', result);
+        console.log('Template phases:', result.template.children[0].children[0].children.filter(c => c.level === 'PHASE').map(p => p.title));
+        console.log('========================');
+
         if (result.success) {
           generatedTemplate = result;
           loadingState.classList.remove('show');
@@ -430,16 +436,33 @@
         return;
       }
 
+      // DEBUG: Log what we're downloading
+      console.log('=== DOWNLOAD DEBUG ===');
+      console.log('Phases in download:', generatedTemplate.template.children[0].children[0].children.filter(c => c.level === 'PHASE').map(p => p.title));
+      console.log('Filename:', generatedTemplate.filename);
+      console.log('====================');
+
       const jsonString = JSON.stringify(generatedTemplate.template, null, 2);
-      const blob = new Blob([jsonString], { type: 'application/json' });
+
+      // Create a new anchor element for download
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      document.body.appendChild(a);
+
+      const blob = new Blob([jsonString], { type: 'application/octet-stream' });
       const url = URL.createObjectURL(blob);
 
-      const anchor = document.getElementById('download-anchor');
-      anchor.href = url;
-      anchor.download = generatedTemplate.filename;
-      anchor.click();
+      a.href = url;
+      a.download = generatedTemplate.filename;
+      a.click();
 
-      URL.revokeObjectURL(url);
+      // Clean up after a delay
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
+
+      console.log('Download triggered for:', generatedTemplate.filename);
     }
   </script>
 </body>
