@@ -160,12 +160,21 @@ app.get('/api/templates', (req, res) => {
     const files = fs.readdirSync(templatesDir)
       .filter(file => file.endsWith('.mt'));
 
+    // Custom display names for templates
+    const nameMap = {
+      'baseline-simple': 'Simple Baseline Template',
+      'WunderDrug-5678': 'WunderDrug Manufacturing (Realistic Example)',
+      'Levera_Drug_-_Albert-Levera_Drug_-_Albert': 'Levera Drug Production (Complex Example)',
+      'Equipment_Linking_to_PR-ABCD-REVISED': 'Equipment Linking Example',
+      'Simple_MT-Test_Record_Creation-REVISED': 'Simple Master Template'
+    };
+
     // Create response array with template metadata
     const templates = files.map(file => {
       const id = file.replace('.mt', '');
-      const displayName = id
+      const displayName = nameMap[id] || id
         .replace('baseline-', '')
-        .split('-')
+        .split(/[-_]/)
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 
