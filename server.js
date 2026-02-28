@@ -680,8 +680,280 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
               };
 
               phaseChildren.push(dataEntryStep);
+            } else if (stepSpec.type === 'numeric') {
+              // Create DATA_ENTRY step with NUMERIC_ENTRY
+              const dataEntryStepId = currentId++;
+              const correctionStepId = currentId++;
+
+              // Create CORRECTION sub-phase-step
+              const correctionSubStep = {
+                id: correctionStepId,
+                globalSerialId: uuidv4(),
+                localReferenceId: uuidv4(),
+                title: "",
+                repeatable: false,
+                notApplicableConfigured: false,
+                alwaysDisplayedOnReviewByException: false,
+                type: "CORRECTION",
+                correctionType: "PRIMARY_DATA_ENTRY",
+                masterTemplateId: templateData.id,
+                unitProcedureId: templateData.children[0].id,
+                operationId: operation.id,
+                phaseId: newPhaseId,
+                phaseStepId: dataEntryStepId,
+                unitProcedureOrderNumber: 1,
+                operationOrderNumber: 1,
+                phaseOrderNumber: newPhaseOrderNumber,
+                phaseStepOrderNumber: stepOrderNumber,
+                parentId: dataEntryStepId,
+                level: "SUB_PHASE_STEP",
+                children: [],
+                simplifiedNavigationRoleIds: [],
+                structureRoles: [],
+                instructionParts: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                dataCaptureSteps: [
+                  {
+                    id: currentId++,
+                    localReferenceId: uuidv4(),
+                    structureId: correctionStepId,
+                    type: "CORRECTION_START",
+                    allValuesCurrent: false,
+                    autoCaptured: false,
+                    optionalStep: true,
+                    configurationGroup: false,
+                    appendToProductId: false,
+                    replaceDefaultQuantity: false,
+                    primaryStep: false,
+                    attachedToTableCell: false,
+                    dataCaptureRoles: [],
+                    notificationRoleIds: [],
+                    actionTriggers: [],
+                    receivedDataProjections: [],
+                    projectedDataProjections: [],
+                    autoNaEnabled: false,
+                    temporaryChange: false,
+                    dataCaptureStepNotifications: []
+                  },
+                  {
+                    id: currentId++,
+                    localReferenceId: uuidv4(),
+                    structureId: correctionStepId,
+                    type: "CORRECTION_END",
+                    allValuesCurrent: false,
+                    autoCaptured: false,
+                    optionalStep: true,
+                    configurationGroup: false,
+                    appendToProductId: false,
+                    replaceDefaultQuantity: false,
+                    primaryStep: false,
+                    attachedToTableCell: false,
+                    dataCaptureRoles: [],
+                    notificationRoleIds: [],
+                    actionTriggers: [],
+                    receivedDataProjections: [],
+                    projectedDataProjections: [],
+                    autoNaEnabled: false,
+                    temporaryChange: false,
+                    dataCaptureStepNotifications: []
+                  },
+                  {
+                    id: currentId++,
+                    localReferenceId: uuidv4(),
+                    structureId: correctionStepId,
+                    type: "CORRECTION_CANCEL",
+                    allValuesCurrent: false,
+                    autoCaptured: false,
+                    optionalStep: true,
+                    configurationGroup: false,
+                    appendToProductId: false,
+                    replaceDefaultQuantity: false,
+                    primaryStep: false,
+                    attachedToTableCell: false,
+                    dataCaptureRoles: [],
+                    notificationRoleIds: [],
+                    actionTriggers: [],
+                    receivedDataProjections: [],
+                    projectedDataProjections: [],
+                    autoNaEnabled: false,
+                    temporaryChange: false,
+                    dataCaptureStepNotifications: []
+                  }
+                ],
+                apiColumns: [],
+                logbookTemplateIds: [],
+                tags: [],
+                productStructures: [],
+                templateTableEntities: [],
+                subTemplate: false,
+                configurationGroupPlaceholder: false,
+                temporaryChangeStructure: false,
+                optionStructure: false,
+                simplifiedNavigationRoles: [],
+                isSubTemplate: false
+              };
+
+              // Build dataCaptureSteps array for numeric step
+              const numericStepDataCapture = [];
+
+              // Add NUMERIC_ENTRY as primary step
+              const numericEntryId = currentId++;
+              numericStepDataCapture.push({
+                id: numericEntryId,
+                localReferenceId: uuidv4(),
+                structureId: dataEntryStepId,
+                type: "NUMERIC_ENTRY",
+                allValuesCurrent: false,
+                autoCaptured: false,
+                optionalStep: false,
+                configurationGroup: false,
+                appendToProductId: false,
+                replaceDefaultQuantity: false,
+                primaryStep: true,
+                attachedToTableCell: false,
+                dataCaptureRoles: [],
+                notificationRoleIds: [],
+                actionTriggers: [],
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                autoNaEnabled: false,
+                temporaryChange: false,
+                dataCaptureStepNotifications: []
+              });
+
+              // Add NOTES if requested
+              if (stepSpec.properties.notes) {
+                numericStepDataCapture.push({
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "NOTES",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                });
+              }
+
+              // Add WITNESS sign-off if requested
+              if (stepSpec.properties.witness) {
+                numericStepDataCapture.push({
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "SIGN_OFF",
+                  signOffType: "WITNESS",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  uniqueSignOffRequired: false,
+                  multiIterationSignOffAllowed: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                });
+              }
+
+              // Add VERIFY sign-off if requested
+              if (stepSpec.properties.verify) {
+                numericStepDataCapture.push({
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "SIGN_OFF",
+                  signOffType: "VERIFY",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
+                  uniqueSignOffRequired: true,
+                  multiIterationSignOffAllowed: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                });
+              }
+
+              // Create DATA_ENTRY step with NUMERIC_ENTRY
+              const dataEntryStep = {
+                id: dataEntryStepId,
+                globalSerialId: uuidv4(),
+                localReferenceId: uuidv4(),
+                title: stepSpec.name,
+                repeatable: false,
+                notApplicableConfigured: false,
+                alwaysDisplayedOnReviewByException: stepSpec.properties.display_on_rbe || false,
+                type: "DATA_ENTRY",
+                masterTemplateId: templateData.id,
+                unitProcedureId: templateData.children[0].id,
+                operationId: operation.id,
+                phaseId: newPhaseId,
+                phaseStepId: dataEntryStepId,
+                unitProcedureOrderNumber: 1,
+                operationOrderNumber: 1,
+                phaseOrderNumber: newPhaseOrderNumber,
+                phaseStepOrderNumber: stepOrderNumber,
+                parentId: newPhaseId,
+                level: "PHASE_STEP",
+                children: [correctionSubStep],
+                simplifiedNavigationRoleIds: [],
+                structureRoles: [],
+                instructionParts: [],
+                structureDisplay: {
+                  structureId: dataEntryStepId,
+                  displayOrderNumber: stepOrderNumber
+                },
+                receivedDataProjections: [],
+                projectedDataProjections: [],
+                dataCaptureSteps: numericStepDataCapture,
+                apiColumns: [],
+                logbookTemplateIds: [],
+                tags: [],
+                productStructures: [],
+                templateTableEntities: [],
+                subTemplate: false,
+                configurationGroupPlaceholder: false,
+                temporaryChangeStructure: false,
+                optionStructure: false,
+                simplifiedNavigationRoles: [],
+                isSubTemplate: false
+              };
+
+              phaseChildren.push(dataEntryStep);
             }
-            // TODO: Add support for numeric steps and other types
+            // TODO: Add support for empty phase steps and other types
           }
 
           // Create ITERATION_REVIEW step for the new phase
