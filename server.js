@@ -15,6 +15,14 @@ const anthropic = new Anthropic({
   maxRetries: 2
 });
 
+// Check required environment variables
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.warn('⚠️  WARNING: ANTHROPIC_API_KEY not set - AI features will fail');
+}
+if (!process.env.ANTHROPIC_BASE_URL) {
+  console.warn('⚠️  WARNING: ANTHROPIC_BASE_URL not set - using default Anthropic endpoint');
+}
+
 // Create Express app
 const app = express();
 
@@ -1182,8 +1190,21 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
           console.log('No matching modification pattern found');
         }
       } catch (error) {
-        console.error('Programmatic modification failed:', error.message);
-        aiError = error.message;
+        console.error('Hybrid approach failed:', error);
+        console.error('Error stack:', error.stack);
+
+        // Provide user-friendly error messages
+        let errorMessage = error.message;
+        if (error.message.includes('apiKey')) {
+          errorMessage = 'AI service not configured - missing API credentials';
+        } else if (error.message.includes('timeout') || error.message.includes('ETIMEDOUT')) {
+          errorMessage = 'AI service request timed out - please try a simpler request';
+        } else if (error.message.includes('rate limit')) {
+          errorMessage = 'AI service rate limit exceeded - please try again in a moment';
+        }
+
+        aiError = errorMessage;
+        console.error('User-facing error:', errorMessage);
       }
     }
 
@@ -1263,7 +1284,18 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
     });
   } catch (error) {
     console.error('Error generating template:', error);
-    res.status(500).json({ error: 'Failed to generate template' });
+    console.error('Error stack:', error.stack);
+
+    // Provide more specific error message
+    let errorMsg = 'Failed to generate template';
+    if (error.message) {
+      errorMsg += ': ' + error.message;
+    }
+
+    res.status(500).json({
+      error: errorMsg,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
