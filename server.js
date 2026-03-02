@@ -830,6 +830,9 @@ If "iterative table" is mentioned, set iterative_table to true.`;
                 projectedDataProjections: [],
                 autoNaEnabled: false,
                 temporaryChange: false,
+                headerStep: false,
+                suggestedEntries: [],
+                linkProductionRecordConfigured: false,
                 dataCaptureStepNotifications: []
               };
 
