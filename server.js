@@ -334,6 +334,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no explanation
 {
   "action": "add_phase",
   "phase_name": "...",
+  "iterative_table": true/false,
   "steps": [
     {
       "type": "general_text" | "numeric" | "empty",
@@ -342,14 +343,16 @@ Return ONLY a JSON object with this exact structure (no markdown, no explanation
         "witness": true/false,
         "verify": true/false,
         "notes": true/false,
-        "display_on_rbe": true/false
+        "display_on_rbe": true/false,
+        "unit_of_measure": "..." (for numeric types only, e.g. "oz", "mL", "g")
       }
     }
   ]
 }
 
 If no steps specified, use "empty" type with phase name as step name.
-If multiple steps requested (e.g., "create 12 steps"), create that many step objects with numbered names.`;
+If multiple steps requested (e.g., "create 12 steps"), create that many step objects with numbered names.
+If "iterative table" is mentioned, set iterative_table to true.`;
 
         const parseMessage = await anthropic.messages.create({
           model: "claude-sonnet-4-20250514",
@@ -807,7 +810,7 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
 
               // Add NUMERIC_ENTRY as primary step
               const numericEntryId = currentId++;
-              numericStepDataCapture.push({
+              const numericEntry = {
                 id: numericEntryId,
                 localReferenceId: uuidv4(),
                 structureId: dataEntryStepId,
@@ -828,7 +831,14 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
                 autoNaEnabled: false,
                 temporaryChange: false,
                 dataCaptureStepNotifications: []
-              });
+              };
+
+              // Add unit of measure if specified
+              if (stepSpec.properties.unit_of_measure) {
+                numericEntry.unitOfMeasure = stepSpec.properties.unit_of_measure;
+              }
+
+              numericStepDataCapture.push(numericEntry);
 
               // Add NOTES if requested
               if (stepSpec.properties.notes) {
@@ -1174,7 +1184,7 @@ If multiple steps requested (e.g., "create 12 steps"), create that many step obj
             configurationGroupPlaceholder: false,
             simplifiedNavigationRoles: [],
             isSubTemplate: false,
-            repeatable: false,
+            repeatable: intent.iterative_table || false,
             notApplicableConfigured: false,
             alwaysDisplayedOnReviewByException: false,
             unitProcedureOrderNumber: 1,
