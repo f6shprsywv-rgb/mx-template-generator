@@ -814,7 +814,7 @@ If "iterative table" is mentioned, set iterative_table to true.`;
                 id: numericEntryId,
                 localReferenceId: uuidv4(),
                 structureId: dataEntryStepId,
-                type: "NUMERIC_ENTRY",
+                type: "GENERAL_NUMERIC",
                 allValuesCurrent: false,
                 autoCaptured: false,
                 optionalStep: false,
@@ -830,9 +830,13 @@ If "iterative table" is mentioned, set iterative_table to true.`;
                 projectedDataProjections: [],
                 autoNaEnabled: false,
                 temporaryChange: false,
-                headerStep: false,
-                suggestedEntries: [],
-                linkProductionRecordConfigured: false,
+                decimalPrecision: 16,
+                minDecimalPrecision: 0,
+                precisionMethod: "DOWN",
+                displayPrecision: false,
+                scientificNotation: false,
+                scientificNotationExponent: 0,
+                measureIncludedInGeneralNumeric: false,
                 dataCaptureStepNotifications: []
               };
 
