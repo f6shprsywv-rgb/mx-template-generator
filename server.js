@@ -905,31 +905,8 @@ If "iterative table" is mentioned, set iterative_table to true.`;
                 });
               }
 
-              // Add NOTES if requested (AFTER sign-offs)
-              if (stepSpec.properties.notes) {
-                numericStepDataCapture.push({
-                  id: currentId++,
-                  localReferenceId: uuidv4(),
-                  structureId: dataEntryStepId,
-                  type: "NOTES",
-                  allValuesCurrent: false,
-                  autoCaptured: false,
-                  optionalStep: false,
-                  configurationGroup: false,
-                  appendToProductId: false,
-                  replaceDefaultQuantity: false,
-                  primaryStep: false,
-                  attachedToTableCell: false,
-                  dataCaptureRoles: [],
-                  notificationRoleIds: [],
-                  actionTriggers: [],
-                  receivedDataProjections: [],
-                  projectedDataProjections: [],
-                  autoNaEnabled: false,
-                  temporaryChange: false,
-                  dataCaptureStepNotifications: []
-                });
-              }
+              // NOTE: NOTES are NOT supported with GENERAL_NUMERIC steps in MX
+              // They only work with GENERAL_TEXT steps
 
               // Create DATA_ENTRY step with NUMERIC_ENTRY
               const dataEntryStep = {
