@@ -326,7 +326,7 @@ app.post('/api/generate', async (req, res) => {
         console.log('Using hybrid approach: AI parser + programmatic generator');
 
         // STEP 1: Use Claude API to parse user intent into structured JSON
-        const intentParsePrompt = `Parse this template modification request into structured JSON. Extract the phase name, step details, and properties.
+        const intentParsePrompt = `You are an expert in pharmaceutical and biopharmaceutical manufacturing procedures. Parse this template modification request and generate realistic, detailed steps.
 
 Request: "${request}"
 
@@ -344,14 +344,26 @@ Return ONLY a JSON object with this exact structure (no markdown, no explanation
         "verify": true/false,
         "notes": true/false,
         "display_on_rbe": true/false,
-        "unit_of_measure": "..." (for numeric types only, e.g. "oz", "mL", "g")
+        "unit_of_measure": "..." (for numeric types only, e.g. "g", "mL", "°C", "PSI", "minutes")
       }
     }
   ]
 }
 
-If no steps specified, use "empty" type with phase name as step name.
-If multiple steps requested (e.g., "create 12 steps"), create that many step objects with numbered names.
+IMPORTANT RULES:
+1. ALWAYS generate realistic, detailed step descriptions (80-120 characters) appropriate for pharmaceutical/biopharmaceutical GMP manufacturing
+2. Generate 3-7 steps per phase that represent a complete, realistic procedure
+3. Use appropriate terminology (e.g., "calibrate", "verify", "document", "record", "comply with SOP")
+4. For numeric steps, include appropriate units (g, mL, °C, PSI, RPM, pH, minutes, etc.)
+5. Add witness/verify flags for critical quality steps
+6. If no specific properties are mentioned, infer appropriate ones based on the phase type
+7. Step names should be clear instructions starting with action verbs
+
+Examples:
+- Material Weighing: steps for verifying material identity, calibrating balance, weighing, recording actual weight, reconciliation
+- Equipment Setup: steps for cleaning verification, calibration checks, parameter setup, final inspection
+- Quality Check: steps for visual inspection, measurement, documentation, approval sign-offs
+
 If "iterative table" is mentioned, set iterative_table to true.`;
 
         const parseMessage = await anthropic.messages.create({
