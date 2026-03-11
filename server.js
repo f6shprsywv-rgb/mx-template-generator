@@ -847,32 +847,6 @@ If "iterative table" is mentioned, set iterative_table to true.`;
 
               numericStepDataCapture.push(numericEntry);
 
-              // Add NOTES if requested
-              if (stepSpec.properties.notes) {
-                numericStepDataCapture.push({
-                  id: currentId++,
-                  localReferenceId: uuidv4(),
-                  structureId: dataEntryStepId,
-                  type: "NOTES",
-                  allValuesCurrent: false,
-                  autoCaptured: false,
-                  optionalStep: false,
-                  configurationGroup: false,
-                  appendToProductId: false,
-                  replaceDefaultQuantity: false,
-                  primaryStep: false,
-                  attachedToTableCell: false,
-                  dataCaptureRoles: [],
-                  notificationRoleIds: [],
-                  actionTriggers: [],
-                  receivedDataProjections: [],
-                  projectedDataProjections: [],
-                  autoNaEnabled: false,
-                  temporaryChange: false,
-                  dataCaptureStepNotifications: []
-                });
-              }
-
               // Add WITNESS sign-off if requested
               if (stepSpec.properties.witness) {
                 numericStepDataCapture.push({
@@ -920,6 +894,32 @@ If "iterative table" is mentioned, set iterative_table to true.`;
                   attachedToTableCell: false,
                   uniqueSignOffRequired: true,
                   multiIterationSignOffAllowed: false,
+                  dataCaptureRoles: [],
+                  notificationRoleIds: [],
+                  actionTriggers: [],
+                  receivedDataProjections: [],
+                  projectedDataProjections: [],
+                  autoNaEnabled: false,
+                  temporaryChange: false,
+                  dataCaptureStepNotifications: []
+                });
+              }
+
+              // Add NOTES if requested (AFTER sign-offs)
+              if (stepSpec.properties.notes) {
+                numericStepDataCapture.push({
+                  id: currentId++,
+                  localReferenceId: uuidv4(),
+                  structureId: dataEntryStepId,
+                  type: "NOTES",
+                  allValuesCurrent: false,
+                  autoCaptured: false,
+                  optionalStep: false,
+                  configurationGroup: false,
+                  appendToProductId: false,
+                  replaceDefaultQuantity: false,
+                  primaryStep: false,
+                  attachedToTableCell: false,
                   dataCaptureRoles: [],
                   notificationRoleIds: [],
                   actionTriggers: [],
